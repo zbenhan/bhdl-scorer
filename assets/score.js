@@ -3,7 +3,6 @@ import { db } from "./firebase.js";
 import {
   collection,
   query,
-  where,
   orderBy,
   getDocs,
   getDoc,
@@ -50,17 +49,14 @@ function fmtTime(ts) {
 }
 
 async function loadActiveRound() {
-  const q = query(
-    collection(db, "rounds"),
-    where("status", "==", "active"),
-    orderBy("createdAt", "desc")
-  );
+  const q = query(collection(db, "rounds"), orderBy("createdAt", "desc"));
   const snap = await getDocs(q);
-  if (snap.empty) return null;
-  if (snap.size > 1) {
+  const actives = snap.docs.filter((d) => d.data().status === "active");
+  if (!actives.length) return null;
+  if (actives.length > 1) {
     showMessage("warn", "检测到多个进行中期次，已默认打开最新一期，如需调整请联系管理员。");
   }
-  const first = snap.docs[0];
+  const first = actives[0];
   return { id: first.id, ...first.data() };
 }
 

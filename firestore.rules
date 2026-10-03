@@ -65,8 +65,9 @@ service cloud.firestore {
 
     // ---------- 用户档案 ----------
     match /users/{uid} {
-      // 本人可读自己档案（含待改密/已停用状态）；管理员可读全部
-      allow read: if signedIn() && (request.auth.uid == uid || isManager());
+      // 本人可读自己档案（含待改密/已停用状态）；管理员可读全部；行领导可读打分人员（结果页实名展示）
+      allow read: if signedIn() && (request.auth.uid == uid || isManager()
+        || (roleIs('leader') && resource.data.role == 'scorer'));
 
       // 首次初始化固定超级管理员（bootstrap 标记不存在前，仅此一次）
       allow create: if signedIn()
@@ -78,9 +79,9 @@ service cloud.firestore {
         && request.resource.data.key == 'ADMIN'
         && !exists(/databases/$(database)/documents/config/bootstrap);
 
-      // 管理员新建账号：超管可建管理员/打分人员，普通管理员只能建打分人员
+      // 管理员新建账号：超管可建管理员/行领导/打分人员，普通管理员只能建打分人员
       allow create: if isManager()
-        && request.resource.data.role in ['admin', 'scorer']
+        && request.resource.data.role in ['admin', 'leader', 'scorer']
         && request.resource.data.active == true
         && request.resource.data.mustChangePassword == true
         && request.resource.data.protected != true
@@ -126,8 +127,9 @@ service cloud.firestore {
 
       // ---------- 打分记录（文档 ID = 打分人员 key，即员工号大写） ----------
       match /scores/{scorerKey} {
-        // 本人只读自己；管理员可读全部
+        // 本人只读自己；管理员可读全部；行领导可读全部（查看/下载实名结果）
         allow read: if isManager()
+          || roleIs('leader')
           || (ready()
             && me().role == 'scorer'
             && scorerKey == me().key);

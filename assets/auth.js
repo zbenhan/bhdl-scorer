@@ -138,15 +138,17 @@ export async function requireProfile({ requireChanged = true } = {}) {
 }
 
 /**
- * 管理员新建账号（超管可建 admin/scorer，普通管理员只能建 scorer）
+ * 管理员新建账号（超管可建 admin/leader/scorer，普通管理员只能建 scorer）
  * 初始密码固定 000000，mustChangePassword=true
+ * 管理员部门固定为「人力资源部」
  */
 export async function managerCreateAccount({ employeeId, dept = "", role }) {
   const displayId = String(employeeId || "").trim();
   const key = normId(displayId);
   if (!key) throw new Error("请输入员工号");
+  if (!["admin", "leader", "scorer"].includes(role)) throw new Error("角色非法");
   if (role === "scorer" && !String(dept).trim()) throw new Error("请填写所属部门");
-  if (role !== "admin" && role !== "scorer") throw new Error("角色非法");
+  const finalDept = role === "admin" ? "人力资源部" : String(dept).trim();
 
   const idxRef = doc(db, "loginIndex", key);
   const exist = await getDoc(idxRef);
@@ -162,7 +164,7 @@ export async function managerCreateAccount({ employeeId, dept = "", role }) {
   await setDoc(doc(db, "users", cred.localId), {
     employeeId: displayId,
     key,
-    dept: String(dept).trim(),
+    dept: finalDept,
     role,
     gen,
     active: true,
@@ -309,6 +311,7 @@ export function renderTopBar(profile, opts = {}) {
   const roleText = {
     superadmin: "超级管理员",
     admin: "管理员",
+    leader: "行领导",
     scorer: "打分人员",
   }[profile.role] || profile.role;
   const home = homePath(profile.role);

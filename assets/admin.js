@@ -29,13 +29,30 @@ import { exportRoundCsv } from "./csv.js";
 
 const profile = await requireProfile();
 if (!profile) throw new Error("no profile");
-if (!isManagerProfile(profile)) {
+const isSuper = profile.role === "superadmin";
+const isLeader = profile.role === "leader";
+const isAdminView = profile.role === "admin"; // 管理员：结果匿名、不可下载
+if (!isManagerProfile(profile) && !isLeader) {
   location.replace("score.html");
   throw new Error("redirect");
 }
-const isSuper = profile.role === "superadmin";
 renderTopBar(profile, { active: "admin.html" });
-if (isSuper) document.getElementById("tabBtnAdmins").hidden = false;
+
+// 行领导：只看「结果查看」页签（实名 + 可下载）
+if (isLeader) {
+  document.querySelectorAll("#tabs button").forEach((b) => {
+    if (b.dataset.tab !== "results") b.hidden = true;
+  });
+  document.querySelector(".page-title").textContent = "打分结果";
+  document.querySelector(".page-sub").textContent =
+    "实名查看并下载各期次打分结果。";
+} else {
+  if (isSuper) document.getElementById("tabBtnAdmins").hidden = false;
+  // 普通管理员：结果匿名、不提供下载
+  if (isAdminView) {
+    document.getElementById("btnDownloadCsv").hidden = true;
+  }
+}
 
 // ---------------- 通用工具 ----------------
 function fmt(ts) {
@@ -45,6 +62,13 @@ function fmt(ts) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(
     d.getHours()
   )}:${p(d.getMinutes())}`;
+}
+
+/** 稳定字符串哈希（匿名视图的行排序用） */
+function hashKey(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
 }
 
 function showAlert(name, type, msg) {
@@ -111,10 +135,11 @@ let resultState = { round: null, rows: [] };
 async function loadAdmins() {
   if (!isSuper) return;
   const tbody = document.getElementById("tbodyAdmins");
-  tbody.innerHTML = '<tr><td colspan="4" class="loading">加载中…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" class="loading">加载中…</td></tr>';
+  const roleText = { admin: "管理员", leader: "行领导" };
   try {
     const snap = await getDocs(
-      query(collection(db, "users"), where("role", "==", "admin"), orderBy("createdAt", "asc"))
+      query(collection(db, "users"), where("role", "in", ["admin", "leader"]))
     );
     const map = new Map();
     snap.forEach((d) => pushCurrent(map, { id: d.id, ...d.data() }));
@@ -123,7 +148,7 @@ async function loadAdmins() {
     );
 
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="muted">暂无普通管理员</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">暂无管理员/行领导账号</td></tr>';
       return;
     }
     tbody.innerHTML = list
@@ -131,6 +156,7 @@ async function loadAdmins() {
         (p) => `
       <tr>
         <td>${escapeHtml(p.employeeId)}${p.protected ? ' <span class="badge on">固定</span>' : ""}</td>
+        <td><span class="badge role-${escapeHtml(p.role)}">${roleText[p.role] || escapeHtml(p.role)}</span></td>
         <td class="num"><span class="badge ${p.active ? "on" : "off"}">${
           p.active ? "启用" : "停用"
         }</span></td>
@@ -152,7 +178,7 @@ async function loadAdmins() {
       .join("");
     tbody._map = map;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="4">加载失败：${escapeHtml(zhError(e))}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">加载失败：${escapeHtml(zhError(e))}</td></tr>`;
   }
 }
 
@@ -160,10 +186,13 @@ document.getElementById("formAdminAdd").addEventListener("submit", async (e) => 
   e.preventDefault();
   hideAlert("Admins");
   const input = document.getElementById("adminEmployeeId");
+  const roleSel = document.getElementById("adminRole");
   const employeeId = input.value.trim();
+  const role = roleSel.value;
+  const roleText = role === "leader" ? "行领导" : "管理员";
   try {
-    await managerCreateAccount({ employeeId, dept: "人力资源部", role: "admin" });
-    showAlert("Admins", "ok", `管理员 ${employeeId} 已添加，初始密码 000000`);
+    await managerCreateAccount({ employeeId, role });
+    showAlert("Admins", "ok", `${roleText} ${employeeId} 已添加，初始密码 000000`);
     input.value = "";
     loadAdmins();
   } catch (err) {
@@ -180,14 +209,14 @@ document.getElementById("tbodyAdmins").addEventListener("click", async (e) => {
   if (!prof) return;
   try {
     if (btn.dataset.action === "toggle") {
-      if (!prof.active || confirm(`确定停用管理员 ${prof.employeeId} 吗？停用后将立即无法登录。`)) {
+      if (!prof.active || confirm(`确定停用 ${prof.employeeId} 吗？停用后将立即无法登录。`)) {
         await managerSetActive(prof, !prof.active);
         loadAdmins();
       }
     } else if (btn.dataset.action === "resetPwd") {
       if (
         confirm(
-          `确定将管理员 ${prof.employeeId} 的密码重置为 000000 吗？\n对方下次登录时需要重新设置新密码。`
+          `确定将 ${prof.employeeId} 的密码重置为 000000 吗？\n对方下次登录时需要重新设置新密码。`
         )
       ) {
         await managerResetPassword(prof);
@@ -250,7 +279,7 @@ async function loadRounds() {
               : '<button class="ghost small" data-action="reopen">重新开启</button>'
           }
           <button class="ghost small" data-action="view">查看结果</button>
-          <button class="ghost small" data-action="csv">下载CSV</button>
+          ${isAdminView ? "" : '<button class="ghost small" data-action="csv">下载CSV</button>'}
           <button class="ghost small danger-text" data-action="clear" ${
             r.scoreCount === 0 ? "disabled" : ""
           }>清空打分</button>
@@ -341,9 +370,11 @@ document.getElementById("formRoundAdd").addEventListener("submit", async (e) => 
       return;
     }
     const deptSnap = await getDocs(
-      query(collection(db, "departments"), where("active", "==", true), orderBy("sortOrder", "asc"))
+      query(collection(db, "departments"), orderBy("sortOrder", "asc"))
     );
-    const depts = deptSnap.docs.map((d) => ({ id: d.id, name: d.data().name }));
+    const depts = deptSnap.docs
+      .filter((d) => d.data().active === true)
+      .map((d) => ({ id: d.id, name: d.data().name }));
     if (!depts.length) {
       showAlert("Rounds", "error", "还没有启用的被打分部门，请先在「被打分部门」页签添加");
       return;
@@ -375,7 +406,7 @@ async function loadScorers() {
   tbody.innerHTML = '<tr><td colspan="4" class="loading">加载中…</td></tr>';
   try {
     const snap = await getDocs(
-      query(collection(db, "users"), where("role", "==", "scorer"), orderBy("createdAt", "asc"))
+      query(collection(db, "users"), where("role", "==", "scorer"))
     );
     const map = new Map();
     snap.forEach((d) => pushCurrent(map, { id: d.id, ...d.data() }));
@@ -646,9 +677,10 @@ async function renderResults(round) {
 
   const depts = round.depts || [];
   const submitted = rows.filter((r) => r.submitted).length;
-  meta.textContent = `期次「${round.name}」：应打分 ${rows.length} 人，已提交 ${submitted} 人，未提交 ${
-    rows.length - submitted
-  } 人`;
+  meta.textContent =
+    `期次「${round.name}」：应打分 ${rows.length} 人，已提交 ${submitted} 人，未提交 ${
+      rows.length - submitted
+    } 人` + (isAdminView ? "（匿名视图：不显示打分人身份）" : "");
 
   const avg = depts.map((d) => {
     const vals = rows.map((r) => r.ratings[d.id]).filter((v) => typeof v === "number");
@@ -656,27 +688,35 @@ async function renderResults(round) {
     return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
   });
 
+  // 普通管理员为匿名视图：隐藏员工号/部门列，行序随机化（按 key 哈希排序）
+  const viewRows = isAdminView
+    ? [...rows].sort((a, b) => hashKey(a.employeeId) - hashKey(b.employeeId))
+    : rows;
+
   table.innerHTML = `
     <thead><tr>
-      <th>员工号</th><th>所属部门</th>
+      ${isAdminView ? "<th>打分人员</th>" : "<th>员工号</th><th>所属部门</th>"}
       ${depts.map((d) => `<th class="num">${escapeHtml(d.name)}</th>`).join("")}
       <th>提交情况</th>
     </tr></thead>
     <tbody>
-      ${rows
+      ${viewRows
         .map(
-          (r) => `
+          (r, i) => `
         <tr class="${r.submitted ? "" : "unsubmitted"}">
-          <td>${escapeHtml(r.employeeId)}</td>
-          <td>${escapeHtml(r.dept)}</td>
+          ${
+            isAdminView
+              ? `<td class="muted">匿名 ${i + 1} 号</td>`
+              : `<td>${escapeHtml(r.employeeId)}</td><td>${escapeHtml(r.dept)}</td>`
+          }
           ${depts
             .map((d) => `<td class="num">${r.ratings[d.id] == null ? "—" : r.ratings[d.id]}</td>`)
             .join("")}
-          <td>${r.submitted ? fmt(r.submittedAt) : "未提交"}</td>
+          <td>${r.submitted ? (isAdminView ? "已提交" : fmt(r.submittedAt)) : "未提交"}</td>
         </tr>`
         )
         .join("")}
-      <tr class="avg"><td>平均分</td><td></td>
+      <tr class="avg"><td>平均分</td>${isAdminView ? "" : "<td></td>"}
         ${avg.map((v) => `<td class="num">${v === "" ? "—" : v}</td>`).join("")}
         <td></td></tr>
     </tbody>`;
@@ -761,7 +801,16 @@ const loaders = {
   results: loadResults,
 };
 
-// 首屏：期次 + 默认页签
+// 首屏：行领导直接看结果；其余进期次管理
 (async function init() {
+  if (isLeader) {
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.remove("active"));
+    document.querySelector('#tabs button[data-tab="results"]').classList.add("active");
+    document.querySelectorAll(".tabpanel").forEach((p) => p.classList.remove("active"));
+    document.getElementById("panel-results").classList.add("active");
+    await loadRoundsDataOnly();
+    await loadResults();
+    return;
+  }
   await loadRounds();
 })();
