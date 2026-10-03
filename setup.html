@@ -6,7 +6,6 @@
   <title>系统初始化 - 管理部门打分系统</title>
   <link rel="stylesheet" href="assets/style.css" />
   <script src="assets/lc-config.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4/dist/av-min.js"></script>
 </head>
 <body>
   <div class="centered">
@@ -16,7 +15,7 @@
 
       <div id="alertBox" class="alert" hidden></div>
       <div id="cfgBox" class="alert warn" hidden>
-        尚未配置 LeanCloud：请先把应用凭证填入 <b>assets/lc-config.js</b>。
+        尚未配置后端：请先把 Bmob 应用密钥填入 <b>assets/lc-config.js</b>。
       </div>
 
       <div id="stepBox">
@@ -28,7 +27,7 @@
           <li>初始密码：<b>chaojiguanliyuan</b></li>
         </ul>
         <p class="muted">
-          初始化只能执行一次。请先在 LeanCloud 控制台创建应用并配置 <b>assets/lc-config.js</b> 后点击下方按钮。
+          初始化只能执行一次。请先在 Bmob 控制台创建应用并配置 <b>assets/lc-config.js</b> 后点击下方按钮。
         </p>
         <button id="btnInit" style="width:100%">一键初始化超级管理员</button>
       </div>
@@ -36,7 +35,7 @@
   </div>
 
   <script type="module">
-    import { configured } from "./assets/lc.js";
+    import { configured, queryOne } from "./assets/lc.js";
     import { bootstrapSuperAdmin, zhError } from "./assets/auth.js";
 
     const alertBox = document.getElementById("alertBox");
@@ -54,16 +53,14 @@
     (async () => {
       if (!configured) return;
       try {
-        const q = new AV.Query("config");
-        q.equalTo("name", "bootstrap");
-        const boot = await q.first();
+        const boot = await queryOne("config", { name: "bootstrap" });
         if (boot) {
           stepBox.innerHTML =
             '<div class="alert ok">系统已完成初始化，本页面不可重复使用。</div>' +
             '<p style="text-align:center;margin-top:14px"><a href="index.html">前往登录 →</a></p>';
         }
       } catch (e) {
-        show("error", "连接 LeanCloud 失败：" + zhError(e));
+        show("error", "连接后端失败：" + zhError(e));
       }
     })();
 

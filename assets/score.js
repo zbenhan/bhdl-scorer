@@ -1,5 +1,5 @@
-// 打分页逻辑（LeanCloud 实现）
-import "./lc.js";
+// 打分页逻辑（Bmob REST 实现）
+import { api, cls, queryList, queryOne, parseTime } from "./lc.js";
 import {
   requireProfile,
   renderTopBar,
@@ -30,8 +30,8 @@ function showMessage(type, msg) {
 }
 
 function fmtTime(ts) {
-  if (!ts) return "";
-  const d = ts instanceof Date ? ts : new Date(ts);
+  const d = parseTime(ts);
+  if (!d) return "";
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
     d.getHours()
@@ -39,21 +39,22 @@ function fmtTime(ts) {
 }
 
 async function loadActiveRound() {
-  const q = new AV.Query("rounds");
-  q.equalTo("status", "active");
-  q.descending("createdAt");
-  const list = await q.find();
+  const list = await queryList("rounds", {
+    cond: { status: "active" },
+    order: "-createdAt",
+    limit: 10,
+  });
   if (!list.length) return null;
   if (list.length > 1) {
     showMessage("warn", "检测到多个进行中期次，已默认打开最新一期，如需调整请联系管理员。");
   }
   const r = list[0];
   return {
-    id: r.id,
-    name: r.get("name"),
-    status: r.get("status"),
-    depts: r.get("depts") || [],
-    createdAt: r.createdAt,
+    id: r.objectId,
+    name: r.name,
+    status: r.status,
+    depts: r.depts || [],
+    createdAt: parseTime(r.createdAt),
   };
 }
 
@@ -138,12 +139,8 @@ function renderDone(round, score) {
     : "";
 }
 
-/** 查询我在本期的打分 */
 async function findMyScore(roundId, key) {
-  const q = new AV.Query("scores");
-  q.equalTo("roundId", roundId);
-  q.equalTo("key", key);
-  return await q.first();
+  return await queryOne("scores", { roundId, key });
 }
 
 async function init() {
@@ -173,8 +170,8 @@ async function init() {
     if (scoreObj) {
       doneCardEl.hidden = false;
       renderDone(currentRound, {
-        ratings: scoreObj.get("ratings") || {},
-        submittedAt: scoreObj.get("submittedAt") || scoreObj.createdAt,
+        ratings: scoreObj.ratings || {},
+        submittedAt: scoreObj.submittedAt || scoreObj.createdAt,
       });
     } else {
       scoreCardEl.hidden = false;
@@ -215,23 +212,22 @@ async function bootstrap() {
         scoreCardEl.hidden = true;
         doneCardEl.hidden = false;
         renderDone(currentRound, {
-          ratings: exist.get("ratings") || {},
-          submittedAt: exist.get("submittedAt") || exist.createdAt,
+          ratings: exist.ratings || {},
+          submittedAt: exist.submittedAt || exist.createdAt,
         });
         return;
       }
-      const s = new AV.Object("scores");
-      s.set("roundId", currentRound.id);
-      s.set("key", profile.key);
-      s.set("employeeId", profile.employeeId);
-      s.set("dept", profile.dept || "");
-      s.set("ratings", ratings);
-      s.set("submittedAt", new Date());
-      await s.save();
-      // 成功：切换只读视图
+      await api("POST", cls("scores"), {
+        roundId: currentRound.id,
+        key: profile.key,
+        employeeId: profile.employeeId,
+        dept: profile.dept || "",
+        ratings,
+        submittedAt: new Date().toISOString(),
+      });
       scoreCardEl.hidden = true;
       doneCardEl.hidden = false;
-      renderDone(currentRound, { ratings, submittedAt: new Date() });
+      renderDone(currentRound, { ratings, submittedAt: new Date().toISOString() });
     } catch (e) {
       showMessage("error", "提交失败：" + zhError(e) + "（若您已提交过，刷新页面查看）");
       btnSubmit.disabled = false;
