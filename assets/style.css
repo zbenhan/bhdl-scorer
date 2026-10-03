@@ -250,6 +250,8 @@ tr.unsubmitted td { color: var(--text-sub); }
 .score-row:last-child { border-bottom: none; }
 .score-row .dept-name { flex: 1; font-weight: 600; }
 .score-row select { width: 150px; }
+.score-row.incomplete { background: #fef2f2; border-radius: 6px; padding-left: 8px; padding-right: 8px; }
+.score-row.incomplete .dept-name { color: #991b1b; }
 .readonly-score { font-weight: 700; color: var(--primary); }
 
 .summary-line {

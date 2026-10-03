@@ -93,7 +93,7 @@ function renderForm(round) {
   });
 }
 
-/** 已被其他行选中的分值立即禁用（导出供单元测试） */
+/** 已被其他行选中的分值立即禁用；未选行标红（导出供单元测试） */
 export function refreshOptions(selectList) {
   const list = selectList || selects;
   const chosen = new Set(list.map((s) => s.value).filter(Boolean));
@@ -102,6 +102,11 @@ export function refreshOptions(selectList) {
       if (!o.value) return;
       o.disabled = chosen.has(o.value) && s.value !== o.value;
     });
+    const row = s.closest('.score-row');
+    if (row) {
+      if (!s.value) row.classList.add('incomplete');
+      else row.classList.remove('incomplete');
+    }
   });
 }
 
@@ -114,9 +119,11 @@ function updateTip() {
 export function validateSelections(selectList) {
   const list = selectList || selects;
   if (list.length === 0) return "本期没有需要打分的部门";
+  const missing = list.filter((s) => !s.value).length;
+  if (missing > 0)
+    return `还有 ${missing} 个部门未打分，必须为所有部门打分后才能提交`;
   const values = [];
   for (const s of list) {
-    if (!s.value) return "还有部门未打分，请全部选择后再提交";
     const v = parseInt(s.value, 10);
     if (!SCORE_VALUES.includes(v)) return "存在非法分值";
     values.push(v);
