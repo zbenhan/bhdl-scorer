@@ -50,15 +50,6 @@
       alertBox.hidden = false;
     }
 
-    // 已登录则直接跳转
-    (async () => {
-      const p = await getCurrentProfile();
-      if (p && p.active !== false) {
-        if (p.mustChangePassword === true) location.replace("change-password.html");
-        else location.replace(homePath(p.role));
-      }
-    })();
-
     // URL 上的提示（如被登出）
     const msg = new URLSearchParams(location.search).get("msg");
     if (msg) {
