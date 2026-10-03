@@ -56,13 +56,10 @@ export async function loginWithEmployeeId(rawId, password) {
   if (!password) throw new Error("请输入密码");
   const idx = await queryOne("loginIndex", { key });
   if (!idx || !idx.username) throw new Error("员工号或密码错误");
-  const u = await api(
-    "GET",
-    "/1/login?username=" +
-      encodeURIComponent(idx.username) +
-      "&password=" +
-      encodeURIComponent(password)
-  );
+  const u = await api("POST", "/1/login", {
+    username: idx.username,
+    password,
+  });
   saveSession({
     objectId: u.objectId,
     sessionToken: u.sessionToken,
@@ -248,13 +245,11 @@ export async function changeMyPassword(profile, { oldPassword, newPassword }) {
   const old = profile.mustChangePassword === true ? INITIAL_PASSWORD : String(oldPassword || "");
   if (!old) throw new Error("请输入原密码");
 
-  // Bmob：带 SessionToken 提交新旧密码
-  await api(
-    "PUT",
-    "/1/users/" + s.objectId,
-    { old_password: old, new_password: pwd },
-    true
-  );
+  // 带通行证提交新旧密码
+  await api("PUT", "/1/users/" + s.objectId, {
+    old_password: old,
+    new_password: pwd,
+  });
 
   if (profile.mustChangePassword === true) {
     await api("PUT", cls("profiles") + "/" + profile.id, {
@@ -262,15 +257,9 @@ export async function changeMyPassword(profile, { oldPassword, newPassword }) {
     });
   }
 
-  // 改密后旧会话可能失效，用新密码重新登录刷新会话
+  // 改密后旧会话已失效，用新密码重新登录刷新会话
   try {
-    const u = await api(
-      "GET",
-      "/1/login?username=" +
-        encodeURIComponent(s.username) +
-        "&password=" +
-        encodeURIComponent(pwd)
-    );
+    const u = await api("POST", "/1/login", { username: s.username, password: pwd });
     saveSession({
       objectId: u.objectId,
       sessionToken: u.sessionToken,
@@ -293,11 +282,10 @@ export async function bootstrapSuperAdmin() {
   } catch (e) {
     // 用户名已存在：上次初始化半途中断，尝试登录幂等继续
     if (e && e.code === 202) {
-      const u = await api(
-        "GET",
-        "/1/login?username=ADMIN&password=" +
-          encodeURIComponent(SUPERADMIN_PASSWORD)
-      );
+      const u = await api("POST", "/1/login", {
+        username: "ADMIN",
+        password: SUPERADMIN_PASSWORD,
+      });
       uid = u.objectId;
     } else {
       throw e;
@@ -305,10 +293,10 @@ export async function bootstrapSuperAdmin() {
   }
 
   // 登录为新超管（建立会话）
-  const u = await api(
-    "GET",
-    "/1/login?username=ADMIN&password=" + encodeURIComponent(SUPERADMIN_PASSWORD)
-  );
+  const u = await api("POST", "/1/login", {
+    username: "ADMIN",
+    password: SUPERADMIN_PASSWORD,
+  });
   saveSession({
     objectId: u.objectId,
     sessionToken: u.sessionToken,
@@ -404,6 +392,7 @@ export function zhError(e) {
     "101": "员工号或密码错误",
     "202": "该员工号已存在账号（如忘记密码请使用「重置密码」）",
     "206": "登录已过期，请重新登录",
+    "403": "没有权限执行此操作",
     ALREADY_BOOTSTRAPPED: "系统已初始化，无需重复操作",
   };
   if (map[code]) return map[code];

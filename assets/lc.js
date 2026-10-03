@@ -1,10 +1,10 @@
-// Bmob REST API 轻量客户端（国内直连，无需代理，不依赖任何第三方 SDK）
+// 后端 REST 轻量客户端（自建 VPS，国内直连，不依赖任何第三方 SDK）
 // 依赖页面先引入：assets/lc-config.js
 
 const cfg = window.BMOB_CONFIG || {};
-export const configured = !!(cfg.appId && cfg.restKey);
+export const configured = !!cfg.baseURL;
 
-const BASE = (cfg.baseURL || "https://api2.bmob.cn").replace(/\/+$/, "");
+const BASE = (cfg.baseURL || "").replace(/\/+$/, "");
 const SESSION_KEY = "bmob_session";
 
 export function saveSession(s) {
@@ -22,22 +22,15 @@ export function clearSession() {
 }
 
 /**
- * 调用 Bmob REST API
+ * 调用后端 REST API（自动附带当前会话通行证）
  * @param method GET/POST/PUT/DELETE
  * @param path   以 /1/ 开头的路径，可带 query string
  * @param body   对象，自动 JSON 序列化
- * @param useSession 是否附带当前登录用户的 SessionToken
  */
-export async function api(method, path, body, useSession = false) {
-  const headers = {
-    "X-Bmob-Application-Id": cfg.appId,
-    "X-Bmob-REST-API-Key": cfg.restKey,
-    "Content-Type": "application/json",
-  };
-  if (useSession) {
-    const s = loadSession();
-    if (s && s.sessionToken) headers["X-Bmob-Session-Token"] = s.sessionToken;
-  }
+export async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  const s = loadSession();
+  if (s && s.sessionToken) headers["X-Session-Token"] = s.sessionToken;
   const res = await fetch(BASE + path, {
     method,
     headers,
