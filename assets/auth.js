@@ -245,28 +245,24 @@ export async function changeMyPassword(profile, { oldPassword, newPassword }) {
   const old = profile.mustChangePassword === true ? INITIAL_PASSWORD : String(oldPassword || "");
   if (!old) throw new Error("请输入原密码");
 
-  // 带通行证提交新旧密码
+  // 带通行证提交新旧密码（成功后服务器会删除本账号所有会话）
   await api("PUT", "/1/users/" + s.objectId, {
     old_password: old,
     new_password: pwd,
+  });
+
+  // 先用新密码重新登录刷新会话，再更新档案
+  const u = await api("POST", "/1/login", { username: s.username, password: pwd });
+  saveSession({
+    objectId: u.objectId,
+    sessionToken: u.sessionToken,
+    username: u.username,
   });
 
   if (profile.mustChangePassword === true) {
     await api("PUT", cls("profiles") + "/" + profile.id, {
       mustChangePassword: false,
     });
-  }
-
-  // 改密后旧会话已失效，用新密码重新登录刷新会话
-  try {
-    const u = await api("POST", "/1/login", { username: s.username, password: pwd });
-    saveSession({
-      objectId: u.objectId,
-      sessionToken: u.sessionToken,
-      username: u.username,
-    });
-  } catch {
-    clearSession();
   }
 }
 
