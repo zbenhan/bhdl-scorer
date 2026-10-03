@@ -1,19 +1,5 @@
-// 管理后台全部逻辑
-import { db } from "./firebase.js";
-import {
-  collection,
-  doc,
-  addDoc,
-  getDoc,
-  getDocs,
-  updateDoc,
-  deleteDoc,
-  writeBatch,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-} from "firebase/firestore";
+// 管理后台全部逻辑（LeanCloud 实现）
+import "./lc.js";
 import {
   requireProfile,
   renderTopBar,
@@ -48,7 +34,6 @@ if (isLeader) {
     "实名查看并下载各期次打分结果。";
 } else {
   if (isSuper) document.getElementById("tabBtnAdmins").hidden = false;
-  // 普通管理员：结果匿名、不提供下载
   if (isAdminView) {
     document.getElementById("btnDownloadCsv").hidden = true;
   }
@@ -57,7 +42,7 @@ if (isLeader) {
 // ---------------- 通用工具 ----------------
 function fmt(ts) {
   if (!ts) return "";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const d = ts instanceof Date ? ts : new Date(ts);
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(
     d.getHours()
@@ -93,23 +78,37 @@ function pushCurrent(map, p) {
     return;
   }
   if (!!p.active === !!prev.active) {
-    const t1 = (prev.createdAt && prev.createdAt.seconds) || 0;
-    const t2 = (p.createdAt && p.createdAt.seconds) || 0;
+    const t1 = prev.createdAt ? prev.createdAt.getTime() : 0;
+    const t2 = p.createdAt ? p.createdAt.getTime() : 0;
     if (t2 >= t1) map.set(p.key, p);
   }
 }
 
-async function deleteDocsInChunks(docs) {
-  for (let i = 0; i < docs.length; i += 400) {
-    const b = writeBatch(db);
-    docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
-    await b.commit();
+/** 把 AV.User 转 profile */
+function userToProfile(u) {
+  return {
+    id: u.id,
+    employeeId: u.get("employeeId") || "",
+    key: u.get("key") || "",
+    dept: u.get("dept") || "",
+    role: u.get("role") || "",
+    gen: u.get("gen") || null,
+    active: u.get("active") !== false,
+    mustChangePassword: u.get("mustChangePassword") === true,
+    protected: u.get("protected") === true,
+    createdAt: u.createdAt,
+  };
+}
+
+/** 批量删除 */
+async function deleteObjsInChunks(objs) {
+  for (let i = 0; i < objs.length; i += 50) {
+    await AV.Object.destroyAll(objs.slice(i, i + 50));
   }
 }
 
 // ---------------- 选项卡 ----------------
 const tabsEl = document.getElementById("tabs");
-const loaded = {};
 tabsEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-tab]");
   if (!btn) return;
@@ -138,13 +137,14 @@ async function loadAdmins() {
   tbody.innerHTML = '<tr><td colspan="5" class="loading">加载中…</td></tr>';
   const roleText = { admin: "管理员", leader: "行领导" };
   try {
-    const snap = await getDocs(
-      query(collection(db, "users"), where("role", "in", ["admin", "leader"]))
-    );
+    const q = new AV.Query("_User");
+    q.containedIn("role", ["admin", "leader"]);
+    q.limit(1000);
+    const users = await q.find();
     const map = new Map();
-    snap.forEach((d) => pushCurrent(map, { id: d.id, ...d.data() }));
+    users.forEach((u) => pushCurrent(map, userToProfile(u)));
     const list = [...map.values()].sort(
-      (a, b) => ((a.createdAt && a.createdAt.seconds) || 0) - ((b.createdAt && b.createdAt.seconds) || 0)
+      (a, b) => (a.createdAt ? a.createdAt.getTime() : 0) - (b.createdAt ? b.createdAt.getTime() : 0)
     );
 
     if (!list.length) {
@@ -238,18 +238,36 @@ function findProfile(map, id) {
 // ===================================================================
 // 期次管理
 // ===================================================================
+function roundToPlain(r) {
+  return {
+    id: r.id,
+    name: r.get("name"),
+    status: r.get("status"),
+    depts: r.get("depts") || [],
+    createdAt: r.createdAt,
+    createdBy: r.get("createdBy") || "",
+  };
+}
+
+async function countScores(roundId) {
+  const q = new AV.Query("scores");
+  q.equalTo("roundId", roundId);
+  return await q.count();
+}
+
 async function loadRounds() {
   const tbody = document.getElementById("tbodyRounds");
   tbody.innerHTML = '<tr><td colspan="6" class="loading">加载中…</td></tr>';
   try {
-    const snap = await getDocs(query(collection(db, "rounds"), orderBy("createdAt", "desc")));
-    const rounds = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const q = new AV.Query("rounds");
+    q.descending("createdAt");
+    q.limit(200);
+    const list = await q.find();
+    const rounds = list.map(roundToPlain);
 
-    // 每期提交人数
     await Promise.all(
       rounds.map(async (r) => {
-        const s = await getDocs(collection(db, "rounds", r.id, "scores"));
-        r.scoreCount = s.size;
+        r.scoreCount = await countScores(r.id);
       })
     );
 
@@ -307,7 +325,9 @@ function bindRoundActions(tbody, rounds) {
       try {
         if (action === "close") {
           if (confirm(`确定关闭期次「${r.name}」吗？关闭后打分人员将无法提交。`)) {
-            await updateDoc(doc(db, "rounds", r.id), { status: "closed" });
+            const obj = AV.Object.createWithoutData("rounds", r.id);
+            obj.set("status", "closed");
+            await obj.save();
             loadRounds();
           }
         } else if (action === "reopen") {
@@ -317,7 +337,9 @@ function bindRoundActions(tbody, rounds) {
             return;
           }
           if (confirm(`确定重新开启期次「${r.name}」吗？`)) {
-            await updateDoc(doc(db, "rounds", r.id), { status: "active" });
+            const obj = AV.Object.createWithoutData("rounds", r.id);
+            obj.set("status", "active");
+            await obj.save();
             loadRounds();
           }
         } else if (action === "view") {
@@ -331,14 +353,18 @@ function bindRoundActions(tbody, rounds) {
               `确定清空期次「${r.name}」的全部 ${r.scoreCount} 份打分吗？\n清空后所有打分人员可重新打分。建议先下载结果存档！`
             )
           ) {
-            const s = await getDocs(collection(db, "rounds", r.id, "scores"));
-            await deleteDocsInChunks([...s.docs]);
+            const q = new AV.Query("scores");
+            q.equalTo("roundId", r.id);
+            q.limit(1000);
+            const list = await q.find();
+            await deleteObjsInChunks(list);
             showAlert("Rounds", "ok", "本期打分已清空");
             loadRounds();
           }
         } else if (action === "delete") {
           if (confirm(`确定删除期次「${r.name}」吗？此操作不可恢复。`)) {
-            await deleteDoc(doc(db, "rounds", r.id));
+            const obj = AV.Object.createWithoutData("rounds", r.id);
+            await obj.destroy();
             loadRounds();
           }
         }
@@ -362,41 +388,33 @@ document.getElementById("formRoundAdd").addEventListener("submit", async (e) => 
   const nameInput = document.getElementById("roundName");
   const name = nameInput.value.trim();
   try {
-    const existActive = (roundsCache.length ? roundsCache : await fetchRoundsLight()).some(
-      (r) => r.status === "active"
-    );
+    const existActive = roundsCache.some((r) => r.status === "active");
     if (existActive) {
       showAlert("Rounds", "error", "已有进行中的期次，请先关闭后再创建新期次");
       return;
     }
-    const deptSnap = await getDocs(
-      query(collection(db, "departments"), orderBy("sortOrder", "asc"))
-    );
-    const depts = deptSnap.docs
-      .filter((d) => d.data().active === true)
-      .map((d) => ({ id: d.id, name: d.data().name }));
+    const dq = new AV.Query("departments");
+    dq.equalTo("active", true);
+    dq.ascending("sortOrder");
+    dq.limit(200);
+    const deptList = await dq.find();
+    const depts = deptList.map((d) => ({ id: d.id, name: d.get("name") }));
     if (!depts.length) {
       showAlert("Rounds", "error", "还没有启用的被打分部门，请先在「被打分部门」页签添加");
       return;
     }
-    await addDoc(collection(db, "rounds"), {
-      name,
-      status: "active",
-      depts,
-      createdAt: serverTimestamp(),
-      createdBy: profile.employeeId,
-    });
+    const obj = new AV.Object("rounds");
+    obj.set("name", name);
+    obj.set("status", "active");
+    obj.set("depts", depts);
+    obj.set("createdBy", profile.employeeId);
+    await obj.save();
     showAlert("Rounds", "ok", `期次「${name}」已创建并开启`);
     loadRounds();
   } catch (err) {
     showAlert("Rounds", "error", zhError(err));
   }
 });
-
-async function fetchRoundsLight() {
-  const snap = await getDocs(collection(db, "rounds"));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-}
 
 // ===================================================================
 // 打分人员
@@ -405,11 +423,12 @@ async function loadScorers() {
   const tbody = document.getElementById("tbodyScorers");
   tbody.innerHTML = '<tr><td colspan="4" class="loading">加载中…</td></tr>';
   try {
-    const snap = await getDocs(
-      query(collection(db, "users"), where("role", "==", "scorer"))
-    );
+    const q = new AV.Query("_User");
+    q.equalTo("role", "scorer");
+    q.limit(1000);
+    const users = await q.find();
     const map = new Map();
-    snap.forEach((d) => pushCurrent(map, { id: d.id, ...d.data() }));
+    users.forEach((u) => pushCurrent(map, userToProfile(u)));
     const list = [...map.values()].sort((a, b) =>
       String(a.employeeId).localeCompare(String(b.employeeId), "zh-Hans-CN")
     );
@@ -497,14 +516,16 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
         showAlert("Scorers", "error", "当前没有进行中的期次");
         return;
       }
-      const scoreRef = doc(db, "rounds", activeRound.id, "scores", p.key);
-      const snap = await getDoc(scoreRef);
-      if (!snap.exists()) {
+      const q = new AV.Query("scores");
+      q.equalTo("roundId", activeRound.id);
+      q.equalTo("key", p.key);
+      const existing = await q.first();
+      if (!existing) {
         showAlert("Scorers", "info", `${p.employeeId} 在本期还未打分，无需重置`);
         return;
       }
       if (confirm(`确定重置 ${p.employeeId} 在「${activeRound.name}」的打分吗？对方可重新打分。`)) {
-        await deleteDoc(scoreRef);
+        await existing.destroy();
         showAlert("Scorers", "ok", `已重置 ${p.employeeId} 的本期打分`);
         loadRounds();
       }
@@ -517,12 +538,24 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
 // ===================================================================
 // 被打分部门
 // ===================================================================
+function deptToPlain(d) {
+  return {
+    id: d.id,
+    name: d.get("name"),
+    active: d.get("active") !== false,
+    sortOrder: d.get("sortOrder") || 0,
+    createdAt: d.createdAt,
+  };
+}
+
 async function loadDepts() {
   const tbody = document.getElementById("tbodyDepts");
   tbody.innerHTML = '<tr><td colspan="4" class="loading">加载中…</td></tr>';
   try {
-    const snap = await getDocs(query(collection(db, "departments"), orderBy("sortOrder", "asc")));
-    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const q = new AV.Query("departments");
+    q.ascending("sortOrder");
+    q.limit(200);
+    const list = (await q.find()).map(deptToPlain);
     if (!list.length) {
       tbody.innerHTML = '<tr><td colspan="4" class="muted">暂无部门</td></tr>';
       return;
@@ -564,12 +597,11 @@ document.getElementById("formDeptAdd").addEventListener("submit", async (e) => {
   try {
     const list = document.getElementById("tbodyDepts")._list;
     const nextSort = list && list.length ? Math.max(...list.map((d) => d.sortOrder || 0)) + 1 : 1;
-    await addDoc(collection(db, "departments"), {
-      name,
-      active: true,
-      sortOrder: nextSort,
-      createdAt: serverTimestamp(),
-    });
+    const obj = new AV.Object("departments");
+    obj.set("name", name);
+    obj.set("active", true);
+    obj.set("sortOrder", nextSort);
+    await obj.save();
     input.value = "";
     loadDepts();
   } catch (err) {
@@ -584,25 +616,29 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
   const list = document.getElementById("tbodyDepts")._list || [];
   const d = list.find((x) => x.id === box.dataset.id);
   if (!d) return;
-  const ref = doc(db, "departments", d.id);
   try {
     if (btn.dataset.action === "rename") {
       const v = prompt("修改部门名称：", d.name);
       if (v != null && v.trim() && v.trim() !== d.name) {
-        await updateDoc(ref, { name: v.trim() });
+        const obj = AV.Object.createWithoutData("departments", d.id);
+        obj.set("name", v.trim());
+        await obj.save();
         loadDepts();
       }
     } else if (btn.dataset.action === "toggle") {
-      await updateDoc(ref, { active: !d.active });
+      const obj = AV.Object.createWithoutData("departments", d.id);
+      obj.set("active", !d.active);
+      await obj.save();
       loadDepts();
     } else if (btn.dataset.action === "up" || btn.dataset.action === "down") {
       const idx = list.findIndex((x) => x.id === d.id);
       const swap = btn.dataset.action === "up" ? list[idx - 1] : list[idx + 1];
       if (!swap) return;
-      const b = writeBatch(db);
-      b.update(ref, { sortOrder: swap.sortOrder });
-      b.update(doc(db, "departments", swap.id), { sortOrder: d.sortOrder });
-      await b.commit();
+      const o1 = AV.Object.createWithoutData("departments", d.id);
+      o1.set("sortOrder", swap.sortOrder);
+      const o2 = AV.Object.createWithoutData("departments", swap.id);
+      o2.set("sortOrder", d.sortOrder);
+      await AV.Object.saveAll([o1, o2]);
       loadDepts();
     } else if (btn.dataset.action === "delete") {
       if (
@@ -610,7 +646,8 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
           `确定删除部门「${d.name}」吗？\n历史期次已保存该部门的打分快照，不受影响；未关闭的期次不再包含它。`
         )
       ) {
-        await deleteDoc(ref);
+        const obj = AV.Object.createWithoutData("departments", d.id);
+        await obj.destroy();
         loadDepts();
       }
     }
@@ -640,18 +677,29 @@ function populateResultSelector() {
 
 /** 组装某期的打分行：全部打分人员 + 各自打分（含未提交） */
 async function buildResultRows(round) {
-  const [scoreSnap, userSnap] = await Promise.all([
-    getDocs(collection(db, "rounds", round.id, "scores")),
-    getDocs(query(collection(db, "users"), where("role", "==", "scorer"))),
-  ]);
+  const sq = new AV.Query("scores");
+  sq.equalTo("roundId", round.id);
+  sq.limit(1000);
+  const scoreList = await sq.find();
+
+  const uq = new AV.Query("_User");
+  uq.equalTo("role", "scorer");
+  uq.limit(1000);
+  const userList = await uq.find();
+
   const scoreMap = new Map();
-  scoreSnap.forEach((d) => {
-    const data = d.data();
-    if (!scoreMap.has(data.key)) scoreMap.set(data.key, data);
+  scoreList.forEach((s) => {
+    const key = s.get("key");
+    if (!scoreMap.has(key)) {
+      scoreMap.set(key, {
+        ratings: s.get("ratings") || {},
+        submittedAt: s.get("submittedAt") || s.createdAt,
+      });
+    }
   });
 
   const curMap = new Map();
-  userSnap.forEach((d) => pushCurrent(curMap, { id: d.id, ...d.data() }));
+  userList.forEach((u) => pushCurrent(curMap, userToProfile(u)));
   const scorers = [...curMap.values()].sort((a, b) =>
     String(a.employeeId).localeCompare(String(b.employeeId), "zh-Hans-CN")
   );
@@ -688,7 +736,6 @@ async function renderResults(round) {
     return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
   });
 
-  // 普通管理员为匿名视图：隐藏员工号/部门列，行序随机化（按 key 哈希排序）
   const viewRows = isAdminView
     ? [...rows].sort((a, b) => hashKey(a.employeeId) - hashKey(b.employeeId))
     : rows;
@@ -730,22 +777,20 @@ async function switchToResults(roundId) {
     .classList.add("active");
   document.querySelectorAll(".tabpanel").forEach((p) => p.classList.remove("active"));
   document.getElementById("panel-results").classList.add("active");
-  await loadRoundsLightForSelector(roundId);
-  if (roundId) document.getElementById("resultRound").value = roundId;
+  await loadRoundsDataOnly();
+  if (roundId) {
+    const sel = document.getElementById("resultRound");
+    if ([...sel.options].some((o) => o.value === roundId)) sel.value = roundId;
+  }
   await loadResults();
 }
 
-async function loadRoundsLightForSelector(selectId) {
-  if (!roundsCache.length) await loadRoundsDataOnly();
-  if (selectId) {
-    const sel = document.getElementById("resultRound");
-    if ([...sel.options].some((o) => o.value === selectId)) sel.value = selectId;
-  }
-}
-
 async function loadRoundsDataOnly() {
-  const snap = await getDocs(query(collection(db, "rounds"), orderBy("createdAt", "desc")));
-  roundsCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const q = new AV.Query("rounds");
+  q.descending("createdAt");
+  q.limit(200);
+  const list = await q.find();
+  roundsCache = list.map(roundToPlain);
   activeRound = roundsCache.find((r) => r.status === "active") || null;
   populateResultSelector();
 }

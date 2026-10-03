@@ -1,21 +1,6 @@
-// 鉴权与账号管理（登录页、改密页、后台共用）
-import { auth, db } from "./firebase.js";
-import {
-  signInAnonymously,
-  signInWithEmailAndPassword,
-  signOut,
-  updatePassword,
-  reauthenticateWithCredential,
-  EmailAuthProvider,
-} from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  writeBatch,
-  serverTimestamp,
-} from "firebase/firestore";
+// 鉴权与账号管理（LeanCloud 实现）
+// 保留原函数签名，页面逻辑无需大改
+import "./lc.js";
 
 export const INITIAL_PASSWORD = "000000";
 export const SUPERADMIN_PASSWORD = "chaojiguanliyuan";
@@ -39,70 +24,70 @@ function genToken() {
   return out;
 }
 
-/** 代次登录邮箱：员工号.代次码@scorer.local（非字母数字字符替换为 _） */
-function emailFor(key, gen) {
+/** 代次用户名：员工号.代次码（仅字母数字与点，LeanCloud 用户名允许） */
+function usernameFor(key, gen) {
   const safe = key.replace(/[^A-Z0-9]/g, "_");
-  return `${safe}.${gen}@${EMAIL_DOMAIN}`;
+  return `${safe}.${gen}`;
 }
 
-/** 等待 Auth 状态首次返回 */
+/** 等待登录态首次返回（LeanCloud 是同步的，直接返回当前用户） */
 export function waitAuth() {
-  return new Promise((resolve) => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      unsub();
-      resolve(u);
-    });
-  });
+  return Promise.resolve(AV.User.current());
 }
 
-/** 未登录时先建立匿名会话（用于读取 loginIndex） */
+/** LeanCloud 无需匿名会话，占位保持接口一致 */
 export async function ensureAnon() {
-  if (auth.currentUser) return auth.currentUser;
-  await signInAnonymously(auth);
-  return auth.currentUser;
+  return AV.User.current();
 }
 
-/**
- * 调用 Firebase Auth REST 新建账号（不会顶掉管理员当前的 SDK 登录态）
- * 返回 { localId, email }
- */
-async function restSignUp(email, password) {
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${window.FIREBASE_CONFIG.apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, returnSecureToken: true }),
-  });
-  const json = await res.json();
-  if (!res.ok || json.error) {
-    throw new Error(json.error ? json.error.message : "SIGNUP_FAILED");
-  }
-  return { localId: json.localId, email: json.email };
+/** 通过 loginIndex 解析当前生效的用户名 */
+async function resolveUsername(key) {
+  const q = new AV.Query("loginIndex");
+  q.equalTo("key", key);
+  const idx = await q.first();
+  if (!idx) return null;
+  return idx.get("username");
 }
 
-/** 员工号 + 密码登录（自动解析当前代次邮箱） */
+/** 员工号 + 密码登录 */
 export async function loginWithEmployeeId(rawId, password) {
   const key = normId(rawId);
   if (!key) throw new Error("请输入员工号");
   if (!password) throw new Error("请输入密码");
-
-  await ensureAnon();
-  const idxSnap = await getDoc(doc(db, "loginIndex", key));
-  if (!idxSnap.exists()) {
-    // 不暴露员工号是否存在
-    throw new Error("员工号或密码错误");
-  }
-  const { email } = idxSnap.data();
-  await signInWithEmailAndPassword(auth, email, password);
+  const username = await resolveUsername(key);
+  if (!username) throw new Error("员工号或密码错误");
+  await AV.User.logIn(username, password);
 }
 
-/** 读取当前登录用户档案；匿名/无档案返回 null */
+/** 把 AV.User 转成页面使用的 profile 对象 */
+function userToProfile(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    uid: u.id,
+    employeeId: u.get("employeeId") || "",
+    key: u.get("key") || "",
+    dept: u.get("dept") || "",
+    role: u.get("role") || "scorer",
+    gen: u.get("gen") || null,
+    active: u.get("active") !== false,
+    mustChangePassword: u.get("mustChangePassword") === true,
+    protected: u.get("protected") === true,
+    createdAt: u.createdAt ? { seconds: Math.floor(u.createdAt.getTime() / 1000) } : null,
+  };
+}
+
+/** 读取当前登录用户档案 */
 export async function getCurrentProfile() {
-  const u = auth.currentUser;
-  if (!u || u.isAnonymous) return null;
-  const snap = await getDoc(doc(db, "users", u.uid));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() };
+  const u = AV.User.current();
+  if (!u) return null;
+  try {
+    await u.fetch();
+  } catch (e) {
+    return null;
+  }
+  if (!u.get("role")) return null; // 非本系统账号
+  return userToProfile(u);
 }
 
 export function isManagerProfile(p) {
@@ -114,19 +99,15 @@ export function homePath(role) {
   return role === "scorer" ? "score.html" : "admin.html";
 }
 
-/**
- * 页面守卫：要求已登录的真实账号。
- * 返回 profile；未登录跳首页；待改密跳改密页；停用则退出并跳首页。
- */
+/** 页面守卫 */
 export async function requireProfile({ requireChanged = true } = {}) {
-  if (!auth.currentUser) await waitAuth();
   const p = await getCurrentProfile();
   if (!p) {
     location.replace("index.html");
     return null;
   }
   if (p.active === false) {
-    await signOut(auth);
+    await AV.User.logOut();
     location.replace("index.html?msg=" + encodeURIComponent("账号已停用，请联系管理员"));
     return null;
   }
@@ -137,10 +118,17 @@ export async function requireProfile({ requireChanged = true } = {}) {
   return p;
 }
 
+/** 检查员工号是否已存在 */
+async function keyExists(key) {
+  const q = new AV.Query("loginIndex");
+  q.equalTo("key", key);
+  const idx = await q.first();
+  return !!idx;
+}
+
 /**
- * 管理员新建账号（超管可建 admin/leader/scorer，普通管理员只能建 scorer）
- * 初始密码固定 000000，mustChangePassword=true
- * 管理员部门固定为「人力资源部」
+ * 管理员新建账号
+ * 初始密码 000000，mustChangePassword=true
  */
 export async function managerCreateAccount({ employeeId, dept = "", role }) {
   const displayId = String(employeeId || "").trim();
@@ -150,37 +138,38 @@ export async function managerCreateAccount({ employeeId, dept = "", role }) {
   if (role === "scorer" && !String(dept).trim()) throw new Error("请填写所属部门");
   const finalDept = role === "admin" ? "人力资源部" : String(dept).trim();
 
-  const idxRef = doc(db, "loginIndex", key);
-  const exist = await getDoc(idxRef);
-  if (exist.exists()) {
+  if (await keyExists(key)) {
     throw new Error("该员工号已存在账号：如已停用可直接启用；如忘记密码请使用「重置密码」");
   }
 
   const gen = genToken();
-  const email = emailFor(key, gen);
-  const cred = await restSignUp(email, INITIAL_PASSWORD);
+  const username = usernameFor(key, gen);
 
-  // 先写 users 档案（规则允许），随后 loginIndex 指向新档案（规则需读到它）
-  await setDoc(doc(db, "users", cred.localId), {
-    employeeId: displayId,
-    key,
-    dept: finalDept,
-    role,
-    gen,
-    active: true,
-    mustChangePassword: true,
-    protected: false,
-    createdAt: serverTimestamp(),
-    createdBy: auth.currentUser ? auth.currentUser.uid : null,
-  });
-  await setDoc(idxRef, { email, uid: cred.localId, active: true });
-  return { uid: cred.localId, email };
+  const user = new AV.User();
+  user.set("username", username);
+  user.set("password", INITIAL_PASSWORD);
+  user.set("employeeId", displayId);
+  user.set("key", key);
+  user.set("dept", finalDept);
+  user.set("role", role);
+  user.set("gen", gen);
+  user.set("active", true);
+  user.set("mustChangePassword", true);
+  user.set("protected", false);
+  await user.signUp();
+
+  const idx = new AV.Object("loginIndex");
+  idx.set("key", key);
+  idx.set("username", username);
+  idx.set("uid", user.id);
+  idx.set("active", true);
+  await idx.save();
+
+  return { uid: user.id, username };
 }
 
 /**
- * 上级重置密码：生成新代次账号（密码 000000 + 强制改密），
- * 切换 loginIndex，旧代次档案立即停用。
- * 规则保证：超管可重置管理员/打分人员；普通管理员只能重置打分人员。
+ * 上级重置密码：新建一个代次账号（密码 000000），旧代次停用，loginIndex 切到新代次
  */
 export async function managerResetPassword(profile) {
   if (!profile || !profile.key) throw new Error("账号信息缺失");
@@ -188,48 +177,64 @@ export async function managerResetPassword(profile) {
 
   const key = profile.key;
   const gen = genToken();
-  const email = emailFor(key, gen);
-  const cred = await restSignUp(email, INITIAL_PASSWORD);
+  const username = usernameFor(key, gen);
 
-  await setDoc(doc(db, "users", cred.localId), {
-    employeeId: profile.employeeId,
-    key,
-    dept: profile.dept || "",
-    role: profile.role,
-    gen,
-    active: true,
-    mustChangePassword: true,
-    protected: false,
-    resetOf: profile.id,
-    createdAt: serverTimestamp(),
-    createdBy: auth.currentUser ? auth.currentUser.uid : null,
-  });
+  const user = new AV.User();
+  user.set("username", username);
+  user.set("password", INITIAL_PASSWORD);
+  user.set("employeeId", profile.employeeId);
+  user.set("key", key);
+  user.set("dept", profile.dept || "");
+  user.set("role", profile.role);
+  user.set("gen", gen);
+  user.set("active", true);
+  user.set("mustChangePassword", true);
+  user.set("protected", false);
+  await user.signUp();
 
-  const batch = writeBatch(db);
-  batch.update(doc(db, "users", profile.id), { active: false });
-  batch.set(doc(db, "loginIndex", key), { email, uid: cred.localId, active: true });
-  await batch.commit();
-  return { uid: cred.localId };
+  // 旧代次停用
+  const oldU = AV.Object.createWithoutData("_User", profile.id);
+  oldU.set("active", false);
+  await oldU.save();
+
+  // loginIndex 切到新代次
+  const q = new AV.Query("loginIndex");
+  q.equalTo("key", key);
+  const idx = await q.first();
+  if (idx) {
+    idx.set("username", username);
+    idx.set("uid", user.id);
+    idx.set("active", true);
+    await idx.save();
+  } else {
+    const ni = new AV.Object("loginIndex");
+    ni.set("key", key);
+    ni.set("username", username);
+    ni.set("uid", user.id);
+    ni.set("active", true);
+    await ni.save();
+  }
+  return { uid: user.id };
 }
 
-/** 管理员停用/启用账号（固定超管除外） */
+/** 管理员停用/启用账号 */
 export async function managerSetActive(profile, active) {
   if (profile.protected === true) throw new Error("固定超级管理员账号不可停用");
-  await updateDoc(doc(db, "users", profile.id), { active: !!active });
+  const u = AV.Object.createWithoutData("_User", profile.id);
+  u.set("active", !!active);
+  await u.save();
 }
 
 /** 管理员修改打分人员所属部门 */
 export async function managerUpdateDept(profile, dept) {
-  await updateDoc(doc(db, "users", profile.id), { dept: String(dept || "").trim() });
+  const u = AV.Object.createWithoutData("_User", profile.id);
+  u.set("dept", String(dept || "").trim());
+  await u.save();
 }
 
-/**
- * 修改本人密码
- * - 首次强制改密：无需旧密码（刚刚登录），新密码不能为 000000
- * - 日常修改：需验证旧密码
- */
+/** 修改本人密码 */
 export async function changeMyPassword(profile, { oldPassword, newPassword }) {
-  const u = auth.currentUser;
+  const u = AV.User.current();
   if (!u) throw new Error("未登录");
   const pwd = String(newPassword || "");
   if (pwd.length < 6) throw new Error("新密码至少 6 位");
@@ -239,69 +244,66 @@ export async function changeMyPassword(profile, { oldPassword, newPassword }) {
   }
 
   if (profile.mustChangePassword === true) {
-    try {
-      await updatePassword(u, pwd);
-    } catch (e) {
-      // 登录态过期时用初始密码重新认证一次
-      if (e && (e.code === "auth/requires-recent-login" || e.code === "auth/invalid-credential")) {
-        const c = EmailAuthProvider.credential(u.email, INITIAL_PASSWORD);
-        await reauthenticateWithCredential(u, c);
-        await updatePassword(u, pwd);
-      } else {
-        throw e;
-      }
-    }
-    await updateDoc(doc(db, "users", u.uid), { mustChangePassword: false });
+    u.set("password", pwd);
+    u.set("mustChangePassword", false);
+    await u.save();
   } else {
     if (!oldPassword) throw new Error("请输入原密码");
-    const c = EmailAuthProvider.credential(u.email, oldPassword);
-    await reauthenticateWithCredential(u, c);
-    await updatePassword(u, pwd);
+    await u.updatePassword(oldPassword, pwd);
   }
 }
 
 /** 一次性初始化固定超级管理员 Admin / chaojiguanliyuan */
 export async function bootstrapSuperAdmin() {
-  await ensureAnon();
-  const bootSnap = await getDoc(doc(db, "config", "bootstrap"));
-  if (bootSnap.exists()) throw new Error("ALREADY_BOOTSTRAPPED");
+  const q = new AV.Query("config");
+  q.equalTo("name", "bootstrap");
+  const boot = await q.first();
+  if (boot) throw new Error("ALREADY_BOOTSTRAPPED");
 
-  const email = `ADMIN@${EMAIL_DOMAIN}`;
-
+  const username = "ADMIN";
+  let user;
   try {
-    await restSignUp(email, SUPERADMIN_PASSWORD);
+    user = new AV.User();
+    user.set("username", username);
+    user.set("password", SUPERADMIN_PASSWORD);
+    user.set("employeeId", "Admin");
+    user.set("key", "ADMIN");
+    user.set("dept", "人力资源部");
+    user.set("role", "superadmin");
+    user.set("gen", null);
+    user.set("active", true);
+    user.set("mustChangePassword", false);
+    user.set("protected", true);
+    await user.signUp();
   } catch (e) {
-    // 上次初始化半途中断、Auth 账号已存在：幂等继续
-    if (e.message !== "EMAIL_EXISTS") throw e;
+    // 用户名被占用：尝试直接登录（上次初始化半途中断）
+    if (e.code === 202 || /taken|exists/i.test(e.message || "")) {
+      await AV.User.logIn(username, SUPERADMIN_PASSWORD);
+      user = AV.User.current();
+    } else {
+      throw e;
+    }
   }
 
-  await signInWithEmailAndPassword(auth, email, SUPERADMIN_PASSWORD);
-  const uid = auth.currentUser.uid;
-
-  const userSnap = await getDoc(doc(db, "users", uid));
-  if (!userSnap.exists()) {
-    await setDoc(doc(db, "users", uid), {
-      employeeId: "Admin",
-      key: "ADMIN",
-      dept: "人力资源部",
-      role: "superadmin",
-      gen: null,
-      active: true,
-      mustChangePassword: false,
-      protected: true,
-      createdAt: serverTimestamp(),
-    });
+  // loginIndex
+  const iq = new AV.Query("loginIndex");
+  iq.equalTo("key", "ADMIN");
+  let idx = await iq.first();
+  if (!idx) {
+    idx = new AV.Object("loginIndex");
+    idx.set("key", "ADMIN");
   }
+  idx.set("username", username);
+  idx.set("uid", user.id);
+  idx.set("active", true);
+  await idx.save();
 
-  const idxSnap = await getDoc(doc(db, "loginIndex", "ADMIN"));
-  if (!idxSnap.exists()) {
-    await setDoc(doc(db, "loginIndex", "ADMIN"), { email, uid, active: true });
-  }
-  await setDoc(doc(db, "config", "bootstrap"), {
-    done: true,
-    at: serverTimestamp(),
-    by: uid,
-  });
+  // bootstrap 标记
+  const cfg = new AV.Object("config");
+  cfg.set("name", "bootstrap");
+  cfg.set("done", true);
+  cfg.set("by", user.id);
+  await cfg.save();
 }
 
 /** 顶部栏渲染 */
@@ -328,12 +330,12 @@ export function renderTopBar(profile, opts = {}) {
       <button class="linklike" id="btnLogout" type="button">退出登录</button>
     </div>`;
   document.getElementById("btnLogout").addEventListener("click", async () => {
-    await signOut(auth);
+    await AV.User.logOut();
     location.replace("index.html");
   });
 }
 
-/** HTML 转义，防止部门名等输入中的特殊字符破坏页面 */
+/** HTML 转义 */
 export function escapeHtml(s) {
   return String(s == null ? "" : s).replace(
     /[&<>"']/g,
@@ -350,22 +352,23 @@ export function escapeHtml(s) {
 
 /** 错误信息中文化 */
 export function zhError(e) {
-  const code = e && (e.code || e.message || "");
+  const code = e && (e.code != null ? String(e.code) : (e.message || ""));
+  const msg = e && e.message ? String(e.message) : "";
   const map = {
-    "auth/invalid-credential": "员工号或密码错误",
-    "auth/wrong-password": "员工号或密码错误",
-    "auth/user-not-found": "员工号或密码错误",
-    "auth/user-disabled": "账号已停用，请联系管理员",
-    "auth/too-many-requests": "登录尝试次数过多，请稍后再试",
-    "auth/network-request-failed": "网络异常，请检查网络后重试",
-    "auth/requires-recent-login": "登录已过期，请退出后重新登录再操作",
-    "auth/operation-not-allowed": "Firebase 未开启对应登录方式，请在控制台启用「电子邮件/密码」和「匿名」登录",
-    "auth/weak-password": "密码强度不足，至少 6 位",
-    EMAIL_EXISTS: "账号异常（邮箱已存在），请重试或联系开发者",
-    OPERATION_NOT_ALLOWED: "Firebase 未开启「电子邮件/密码」登录方式，请在控制台启用",
-    WEAK_PASSWORD: "密码强度不足，至少 6 位",
-    "permission-denied": "没有操作权限（可能无权管理该类账号，或账号已停用）",
+    "200": "服务器异常，请稍后再试",
+    "201": "密码不能为空",
+    "202": "该员工号已存在账号（如忘记密码请使用「重置密码」）",
+    "210": "员工号或密码错误",
+    "211": "员工号或密码错误",
+    "213": "账号不存在",
+    "216": "登录已过期，请重新登录",
+    "219": "登录尝试次数过多，请稍后再试",
+    "107": "网络异常，请检查网络后重试",
     ALREADY_BOOTSTRAPPED: "系统已初始化，无需重复操作",
   };
-  return map[code] || e.message || "操作失败，请重试";
+  if (map[code]) return map[code];
+  if (/password/i.test(msg) && /length/i.test(msg)) return "密码至少 6 位";
+  if (/Could not find user/i.test(msg)) return "员工号或密码错误";
+  if (/network|timeout|failed to fetch/i.test(msg)) return "网络异常，请检查网络后重试";
+  return msg || "操作失败，请重试";
 }

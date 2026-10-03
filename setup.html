@@ -5,16 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>系统初始化 - 管理部门打分系统</title>
   <link rel="stylesheet" href="assets/style.css" />
-  <script src="assets/firebase-config.js"></script>
-  <script type="importmap">
-  {
-    "imports": {
-      "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
-      "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
-      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
-    }
-  }
-  </script>
+  <script src="assets/lc-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4/dist/av-min.js"></script>
 </head>
 <body>
   <div class="centered">
@@ -24,7 +16,7 @@
 
       <div id="alertBox" class="alert" hidden></div>
       <div id="cfgBox" class="alert warn" hidden>
-        尚未配置 Firebase：请先把配置填入 <b>assets/firebase-config.js</b>。
+        尚未配置 LeanCloud：请先把应用凭证填入 <b>assets/lc-config.js</b>。
       </div>
 
       <div id="stepBox">
@@ -36,7 +28,7 @@
           <li>初始密码：<b>chaojiguanliyuan</b></li>
         </ul>
         <p class="muted">
-          初始化只能执行一次。请在 Firebase 项目创建并部署安全规则后立即点击下方按钮。
+          初始化只能执行一次。请先在 LeanCloud 控制台创建应用并配置 <b>assets/lc-config.js</b> 后点击下方按钮。
         </p>
         <button id="btnInit" style="width:100%">一键初始化超级管理员</button>
       </div>
@@ -44,11 +36,8 @@
   </div>
 
   <script type="module">
-    import { configured } from "./assets/firebase.js";
+    import { configured } from "./assets/lc.js";
     import { bootstrapSuperAdmin, zhError } from "./assets/auth.js";
-    import { doc, getDoc } from "firebase/firestore";
-    import { db } from "./assets/firebase.js";
-    import { ensureAnon } from "./assets/auth.js";
 
     const alertBox = document.getElementById("alertBox");
     const stepBox = document.getElementById("stepBox");
@@ -63,16 +52,18 @@
     }
 
     (async () => {
+      if (!configured) return;
       try {
-        await ensureAnon();
-        const snap = await getDoc(doc(db, "config", "bootstrap"));
-        if (snap.exists()) {
+        const q = new AV.Query("config");
+        q.equalTo("name", "bootstrap");
+        const boot = await q.first();
+        if (boot) {
           stepBox.innerHTML =
             '<div class="alert ok">系统已完成初始化，本页面不可重复使用。</div>' +
             '<p style="text-align:center;margin-top:14px"><a href="index.html">前往登录 →</a></p>';
         }
       } catch (e) {
-        show("error", "连接 Firebase 失败：" + zhError(e));
+        show("error", "连接 LeanCloud 失败：" + zhError(e));
       }
     })();
 
