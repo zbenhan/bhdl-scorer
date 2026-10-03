@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 - 管理部门打分系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script src="assets/firebase-config.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="centered">
+    <form class="auth-card" id="loginForm">
+      <div class="logo">管理部门打分系统</div>
+      <div class="sub">请使用员工号登录</div>
+
+      <div id="alertBox" class="alert error" hidden></div>
+      <div id="cfgBox" class="alert warn" hidden>
+        尚未配置 Firebase：请把 Firebase 项目配置填入 <b>assets/firebase-config.js</b> 后部署。
+      </div>
+
+      <label class="field">
+        <span>员工号</span>
+        <input type="text" id="employeeId" autocomplete="username" placeholder="如 HR001" required />
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" id="password" autocomplete="current-password" placeholder="初始密码 000000" required />
+      </label>
+      <button type="submit" id="btnLogin">登 录</button>
+    </form>
+  </div>
+
+  <script type="module">
+    import { configured } from "./assets/firebase.js";
+    import {
+      loginWithEmployeeId,
+      getCurrentProfile,
+      homePath,
+      waitAuth,
+      zhError,
+    } from "./assets/auth.js";
+
+    const form = document.getElementById("loginForm");
+    const alertBox = document.getElementById("alertBox");
+    const btn = document.getElementById("btnLogin");
+
+    if (!configured) document.getElementById("cfgBox").hidden = false;
+
+    function showError(msg) {
+      alertBox.textContent = msg;
+      alertBox.hidden = false;
+    }
+
+    // 已登录则直接跳转
+    (async () => {
+      await waitAuth();
+      const p = await getCurrentProfile();
+      if (p && p.active !== false) {
+        if (p.mustChangePassword === true) location.replace("change-password.html");
+        else location.replace(homePath(p.role));
+      }
+    })();
+
+    // URL 上的提示（如被登出）
+    const msg = new URLSearchParams(location.search).get("msg");
+    if (msg) {
+      alertBox.textContent = msg;
+      alertBox.classList.remove("error");
+      alertBox.classList.add("info");
+      alertBox.hidden = false;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      alertBox.hidden = true;
+      btn.disabled = true;
+      btn.textContent = "登录中…";
+      try {
+        await loginWithEmployeeId(
+          document.getElementById("employeeId").value,
+          document.getElementById("password").value
+        );
+        // 登录成功后等待档案并按角色跳转
+        const p = await getCurrentProfile();
+        if (!p) throw new Error("登录异常，请重试");
+        if (p.active === false) throw new Error("账号已停用，请联系管理员");
+        if (p.mustChangePassword === true) location.replace("change-password.html");
+        else location.replace(homePath(p.role));
+      } catch (err) {
+        showError(zhError(err));
+        btn.disabled = false;
+        btn.textContent = "登 录";
+      }
+    });
+  </script>
+</body>
+</html>

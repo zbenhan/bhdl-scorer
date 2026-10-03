@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我要打分 - 管理部门打分系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script src="assets/firebase-config.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar"><div id="topbar"></div></header>
+
+  <main class="container">
+    <h1 class="page-title">我要打分</h1>
+    <p class="page-sub">请对每个管理部门分别打分；<b>每个分值只能使用一次</b>，某分值被选中后，其他部门将无法再选。</p>
+
+    <div id="loading" class="loading">加载中…</div>
+    <div id="message" class="alert" hidden></div>
+
+    <div id="roundInfo" class="summary-line" hidden></div>
+
+    <!-- 打分表单 -->
+    <section class="card" id="scoreCard" hidden>
+      <h2>本期打分</h2>
+      <p class="muted">可选分值：5、10、15 …… 95、100（均为 5 的倍数）。提交后<b>不可修改</b>，请确认无误后提交。</p>
+      <div id="scoreRows"></div>
+      <div style="margin-top:16px">
+        <button id="btnSubmit" type="button">确认提交打分</button>
+        <span id="submitTip" class="muted" style="margin-left:10px"></span>
+      </div>
+    </section>
+
+    <!-- 已提交只读回显 -->
+    <section class="card" id="doneCard" hidden>
+      <h2>本期打分已提交</h2>
+      <div class="alert ok">您已完成本期打分，结果不可修改。如需重新打分，请联系管理员重置。</div>
+      <div id="doneRows" style="margin-top:8px"></div>
+      <p class="muted" id="doneTime"></p>
+    </section>
+  </main>
+
+  <script type="module" src="assets/score.js"></script>
+</body>
+</html>

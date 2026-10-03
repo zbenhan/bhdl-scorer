@@ -1,0 +1,15 @@
+# 系统/编辑器杂项
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 依赖（本站无构建依赖，兜底忽略）
+node_modules/
+
+# TRAE 工作文档（本地计划等）
+.trae/
