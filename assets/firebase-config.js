@@ -11,10 +11,10 @@
  * 数据安全由 firestore.rules 安全规则保证，不属于泄密。
  */
 window.FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyD7Q2FeCpRTsAevB1_SuV6qfaeun3nS7ic",
+  authDomain: "bhdl-scorer.firebaseapp.com",
+  projectId: "bhdl-scorer",
+  storageBucket: "bhdl-scorer.firebasestorage.app",
+  messagingSenderId: "115272089801",
+  appId: "1:115272089801:web:e1be62b3390d82f1b00d18"
 };
