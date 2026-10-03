@@ -63,6 +63,8 @@ function check(name, cond) {
   const adminId = r.body.objectId;
   r = await req("POST", "/1/login", { username: "ADMIN", password: "chaojiguanliyuan" }, false);
   token = r.body.sessionToken;
+  r = await req("GET", "/1/classes/profiles?" + where({ uid: adminId }));
+  check("初始化期可查空 profiles", r.status === 200 && r.body.results.length === 0);
   r = await req("POST", "/1/classes/profiles", { uid: adminId, employeeId: "Admin", key: "ADMIN", dept: "人力资源部", role: "superadmin", active: true, mustChangePassword: false, protected: true });
   check("写超管档案", r.status === 201);
   r = await req("POST", "/1/classes/loginIndex", { key: "ADMIN", username: "ADMIN", uid: adminId, active: true });

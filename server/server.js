@@ -225,11 +225,14 @@ const server = http.createServer(async (req, res) => {
         // 公开表：登录页查 loginIndex、初始化页查 config
         const publicTable = tname === "loginIndex" || tname === "config";
         if (!publicTable) {
-          if (!prof) return send(res, 403, { code: 403, error: "forbidden" }, origin);
-          if (tname === "profiles" && !isManager(prof) && cond.uid !== uid) {
+          // 初始化期（profiles 为空）允许已登录会话查询
+          if (!prof && !(bootstrapEmpty() && uid)) {
             return send(res, 403, { code: 403, error: "forbidden" }, origin);
           }
-          if (tname === "scores" && prof.role === "scorer" && cond.key !== prof.key) {
+          if (tname === "profiles" && prof && !isManager(prof) && cond.uid !== uid) {
+            return send(res, 403, { code: 403, error: "forbidden" }, origin);
+          }
+          if (tname === "scores" && prof && prof.role === "scorer" && cond.key !== prof.key) {
             return send(res, 403, { code: 403, error: "forbidden" }, origin);
           }
         }
