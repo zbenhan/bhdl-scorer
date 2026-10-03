@@ -280,8 +280,9 @@ export async function bootstrapSuperAdmin() {
   try {
     uid = await createUser(username, SUPERADMIN_PASSWORD);
   } catch (e) {
-    // 用户名已存在：上次初始化半途中断，尝试登录幂等继续
-    if (e && e.code === 202) {
+    // 用户名已存在（202）或已有账号导致无权限新建（403）：
+    // 上次初始化半途中断，尝试登录幂等继续
+    if (e && (e.code === 202 || e.code === 403)) {
       const u = await api("POST", "/1/login", {
         username: "ADMIN",
         password: SUPERADMIN_PASSWORD,
