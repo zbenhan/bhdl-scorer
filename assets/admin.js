@@ -17,16 +17,12 @@ import { exportRoundCsv } from "./csv.js";
 const profile = await requireProfile();
 if (!profile) throw new Error("no profile");
 const isSuper = profile.role === "superadmin";
-const isAdminView = profile.role === "admin"; // 管理员：结果匿名、不可下载
+const isAdminView = profile.role === "admin"; // 管理员：结果匿名、可下载匿名 CSV
 if (!isManagerProfile(profile)) {
   location.replace("score.html");
   throw new Error("redirect");
 }
 renderTopBar(profile, { active: "admin.html" });
-
-if (isAdminView) {
-  document.getElementById("btnDownloadCsv").hidden = true;
-}
 
 // ---------------- 通用工具 ----------------
 function fmt(ts) {
@@ -706,9 +702,12 @@ async function buildResultRows(round) {
 
   const curMap = new Map();
   scorerProfiles.forEach((p) => pushCurrent(curMap, p));
-  const scorers = [...curMap.values()].sort((a, b) =>
-    String(a.employeeId).localeCompare(String(b.employeeId), "zh-Hans-CN")
-  );
+  // 结果仅统计“启用”状态的打分人员；停用人员不参与、不阻塞“全部提交”判断
+  const scorers = [...curMap.values()]
+    .filter((p) => p.active === true)
+    .sort((a, b) =>
+      String(a.employeeId).localeCompare(String(b.employeeId), "zh-Hans-CN")
+    );
 
   return scorers.map((p) => {
     const s = scoreMap.get(p.key);
@@ -832,7 +831,7 @@ document.getElementById("btnDownloadCsv").addEventListener("click", async () => 
     if (!allSubmitted(resultState.rows)) {
       return await alertBox("尚有人员未提交，全部提交完成前不能下载结果");
     }
-    exportRoundCsv(round, shuffleRows(resultState.rows));
+    exportRoundCsv(round, shuffleRows(resultState.rows), { anonymous: isAdminView });
   } catch (e) {
     await alertBox("下载失败：" + zhError(e));
   }

@@ -23,16 +23,19 @@ function fmtTime(ts) {
  * @param {object} round 期次对象（含 name、depts=[{id,name}]）
  * @param {Array}  rows  [{employeeId, dept, submitted, ratings:{deptId:number}, submittedAt}]
  */
-export function exportRoundCsv(round, rows) {
+export function exportRoundCsv(round, rows, opts = {}) {
   const depts = round.depts || [];
-  const header = ["员工号", "所属部门", ...depts.map((d) => d.name), "提交时间"];
+  const anonymous = !!opts.anonymous;
+  const header = anonymous
+    ? ["打分人员", ...depts.map((d) => d.name)]
+    : ["员工号", "所属部门", ...depts.map((d) => d.name), "提交时间"];
 
   const lines = [header.map(csvCell).join(",")];
 
   let sumByDept = depts.map(() => 0);
   let cntByDept = depts.map(() => 0);
 
-  rows.forEach((r) => {
+  rows.forEach((r, i) => {
     const vals = depts.map((d) => {
       const v = r.ratings ? r.ratings[d.id] : null;
       if (typeof v === "number") {
@@ -41,18 +44,17 @@ export function exportRoundCsv(round, rows) {
       }
       return v == null ? "" : v;
     });
-    lines.push(
-      [r.employeeId || "", r.dept || "", ...vals, r.submitted ? fmtTime(r.submittedAt) : "未提交"]
-        .map(csvCell)
-        .join(",")
-    );
+    const row = anonymous
+      ? [`匿名 ${i + 1} 号`, ...vals]
+      : [r.employeeId || "", r.dept || "", ...vals, r.submitted ? fmtTime(r.submittedAt) : "未提交"];
+    lines.push(row.map(csvCell).join(","));
   });
 
   // 平均分行
   const avgs = sumByDept.map((sum, i) =>
     cntByDept[i] ? Math.round((sum / cntByDept[i]) * 100) / 100 : ""
   );
-  lines.push(["平均分", "", ...avgs, ""].map(csvCell).join(","));
+  lines.push((anonymous ? ["平均分", ...avgs] : ["平均分", "", ...avgs, ""]).map(csvCell).join(","));
 
   const csv = "\uFEFF" + lines.join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
