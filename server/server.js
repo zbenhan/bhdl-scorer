@@ -10,7 +10,7 @@
 //   - 数据表写入：rounds/departments/config/loginIndex 仅管理员；
 //     profiles 仅管理员（本人可改 mustChangePassword 字段）；
 //     scores 任何登录用户可创建（员工号强制为本人），修改/删除仅管理员
-//   - 角色提升（创建/修改 admin、leader、superadmin 档案）：仅超级管理员
+//   - 角色提升（创建/修改 admin、superadmin 档案）：仅超级管理员
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -262,7 +262,7 @@ const server = http.createServer(async (req, res) => {
           body.employeeId = prof.employeeId;
         } else if (!boot) {
           if (!isManager(prof)) return send(res, 403, { code: 403, error: "forbidden" }, origin);
-          if (tname === "profiles" && ["admin", "leader", "superadmin"].includes(body.role) && !isSuper(prof)) {
+          if (tname === "profiles" && ["admin", "superadmin"].includes(body.role) && !isSuper(prof)) {
             return send(res, 403, { code: 403, error: "forbidden" }, origin);
           }
         }
@@ -286,7 +286,7 @@ const server = http.createServer(async (req, res) => {
           if (!isManager(prof)) return send(res, 403, { code: 403, error: "forbidden" }, origin);
           if (tname === "profiles") {
             const role = body.role != null ? body.role : row.role;
-            if (["admin", "leader", "superadmin"].includes(role) && !isSuper(prof)) {
+            if (["admin", "superadmin"].includes(role) && !isSuper(prof)) {
               return send(res, 403, { code: 403, error: "forbidden" }, origin);
             }
           }

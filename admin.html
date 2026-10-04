@@ -25,22 +25,17 @@
     <!-- ===== 管理员账号（仅超管） ===== -->
     <section class="tabpanel" id="panel-admins">
       <div class="card">
-        <h2>新增管理员 / 行领导</h2>
-        <p class="muted">管理员属人力资源部，负责日常管理；行领导可实名查看并下载打分结果。初始密码均为 <b>000000</b>，首次登录需修改。</p>
+        <h2>新增管理员</h2>
+        <p class="muted">管理员属人力资源部，负责日常管理。初始密码为 <b>000000</b>，首次登录需修改。</p>
         <div id="alertAdmins" class="alert" hidden></div>
         <form class="inline-form" id="formAdminAdd">
           <label class="field"><span>员工号</span>
             <input type="text" id="adminEmployeeId" placeholder="如 HR002" required /></label>
-          <label class="field"><span>角色</span>
-            <select id="adminRole">
-              <option value="admin" selected>管理员（人力资源部）</option>
-              <option value="leader">行领导（查看/下载结果）</option>
-            </select></label>
           <button type="submit">添加账号</button>
         </form>
       </div>
       <div class="card">
-        <h2>管理员 / 行领导列表 <button class="ghost small" type="button" data-reload="admins">刷新</button></h2>
+        <h2>管理员列表 <button class="ghost small" type="button" data-reload="admins">刷新</button></h2>
         <div class="table-wrap">
           <table>
             <thead><tr><th>员工号</th><th>角色</th><th class="num">状态</th><th>创建时间</th><th>操作</th></tr></thead>

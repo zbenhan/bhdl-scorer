@@ -17,26 +17,15 @@ import { exportRoundCsv } from "./csv.js";
 const profile = await requireProfile();
 if (!profile) throw new Error("no profile");
 const isSuper = profile.role === "superadmin";
-const isLeader = profile.role === "leader";
 const isAdminView = profile.role === "admin"; // 管理员：结果匿名、不可下载
-if (!isManagerProfile(profile) && !isLeader) {
+if (!isManagerProfile(profile)) {
   location.replace("score.html");
   throw new Error("redirect");
 }
 renderTopBar(profile, { active: "admin.html" });
 
-// 行领导：只看「结果查看」页签（实名 + 可下载）
-if (isLeader) {
-  document.querySelectorAll("#tabs button").forEach((b) => {
-    if (b.dataset.tab !== "results") b.hidden = true;
-  });
-  document.querySelector(".page-title").textContent = "打分结果";
-  document.querySelector(".page-sub").textContent =
-    "实名查看并下载各期次打分结果。";
-} else {
-  if (isAdminView) {
-    document.getElementById("btnDownloadCsv").hidden = true;
-  }
+if (isAdminView) {
+  document.getElementById("btnDownloadCsv").hidden = true;
 }
 
 // ---------------- 通用工具 ----------------
@@ -122,9 +111,9 @@ async function loadAdmins() {
   if (!isSuper) return;
   const tbody = document.getElementById("tbodyAdmins");
   tbody.innerHTML = '<tr><td colspan="5" class="loading">加载中…</td></tr>';
-  const roleText = { admin: "管理员", leader: "行领导" };
+  const roleText = { admin: "管理员" };
   try {
-    const all = await listProfilesByRoles(["admin", "leader"]);
+    const all = await listProfilesByRoles(["admin"]);
     const map = new Map();
     all.forEach((p) => pushCurrent(map, p));
     const list = [...map.values()].sort(
@@ -132,7 +121,7 @@ async function loadAdmins() {
     );
 
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">暂无管理员/行领导账号</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">暂无管理员账号</td></tr>';
       return;
     }
     tbody.innerHTML = list
@@ -170,13 +159,10 @@ document.getElementById("formAdminAdd").addEventListener("submit", async (e) => 
   e.preventDefault();
   hideAlert("Admins");
   const input = document.getElementById("adminEmployeeId");
-  const roleSel = document.getElementById("adminRole");
   const employeeId = input.value.trim();
-  const role = roleSel.value;
-  const roleText = role === "leader" ? "行领导" : "管理员";
   try {
-    await managerCreateAccount({ employeeId, role });
-    showAlert("Admins", "ok", `${roleText} ${employeeId} 已添加，初始密码 000000`);
+    await managerCreateAccount({ employeeId, role: "admin" });
+    showAlert("Admins", "ok", `管理员 ${employeeId} 已添加，初始密码 000000`);
     input.value = "";
     loadAdmins();
   } catch (err) {
@@ -271,7 +257,6 @@ async function loadRounds() {
               ? '<button class="ghost small" data-action="close">关闭期次</button>'
               : '<button class="ghost small" data-action="reopen">重新开启</button>'
           }
-          <button class="ghost small" data-action="view">查看结果</button>
           ${isAdminView ? "" : '<button class="ghost small" data-action="csv">下载CSV</button>'}
           <button class="ghost small danger-text" data-action="clear" ${
             r.scoreCount === 0 ? "disabled" : ""
@@ -313,8 +298,6 @@ function bindRoundActions(tbody, rounds) {
             await api("PUT", cls("rounds") + "/" + r.id, { status: "active" });
             loadRounds();
           }
-        } else if (action === "view") {
-          switchToResults(r.id);
         } else if (action === "csv") {
           const rows = await buildResultRows(r);
           exportRoundCsv(r, shuffleRows(rows));
@@ -724,21 +707,6 @@ async function renderResults(round) {
   wrap.hidden = false;
 }
 
-async function switchToResults(roundId) {
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.remove("active"));
-  document
-    .querySelector('#tabs button[data-tab="results"]')
-    .classList.add("active");
-  document.querySelectorAll(".tabpanel").forEach((p) => p.classList.remove("active"));
-  document.getElementById("panel-results").classList.add("active");
-  await loadRoundsDataOnly();
-  if (roundId) {
-    const sel = document.getElementById("resultRound");
-    if ([...sel.options].some((o) => o.value === roundId)) sel.value = roundId;
-  }
-  await loadResults();
-}
-
 async function loadRoundsDataOnly() {
   const rows = await queryList("rounds", { order: "-createdAt", limit: 200 });
   roundsCache = rows.map(roundToPlain);
@@ -797,16 +765,7 @@ const loaders = {
   results: loadResults,
 };
 
-// 首屏：行领导直接看结果；其余进期次管理
+// 首屏：期次管理
 (async function init() {
-  if (isLeader) {
-    document.querySelectorAll("#tabs button").forEach((b) => b.classList.remove("active"));
-    document.querySelector('#tabs button[data-tab="results"]').classList.add("active");
-    document.querySelectorAll(".tabpanel").forEach((p) => p.classList.remove("active"));
-    document.getElementById("panel-results").classList.add("active");
-    await loadRoundsDataOnly();
-    await loadResults();
-    return;
-  }
   await loadRounds();
 })();

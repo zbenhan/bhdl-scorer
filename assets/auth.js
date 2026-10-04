@@ -143,7 +143,7 @@ export async function managerCreateAccount({ employeeId, dept = "", role }) {
   const displayId = String(employeeId || "").trim();
   const key = normId(displayId);
   if (!key) throw new Error("请输入员工号");
-  if (!["admin", "leader", "scorer"].includes(role)) throw new Error("角色非法");
+  if (!["admin", "scorer"].includes(role)) throw new Error("角色非法");
   if (role === "scorer" && !String(dept).trim()) throw new Error("请填写所属部门");
   const finalDept = role === "admin" ? "人力资源部" : String(dept).trim();
 
@@ -352,7 +352,6 @@ export function renderTopBar(profile, opts = {}) {
   const roleText = {
     superadmin: "超级管理员",
     admin: "管理员",
-    leader: "行领导",
     scorer: "打分人员",
   }[profile.role] || profile.role;
   const home = homePath(profile.role);
