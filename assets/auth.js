@@ -6,6 +6,7 @@ import {
   cls,
   where,
   queryOne,
+  queryList,
   saveSession,
   loadSession,
   clearSession,
@@ -224,11 +225,18 @@ export async function managerSetActive(profile, active) {
   await api("PUT", cls("profiles") + "/" + profile.id, { active: !!active });
 }
 
-/** 管理员修改打分人员所属部门 */
-export async function managerUpdateDept(profile, dept) {
-  await api("PUT", cls("profiles") + "/" + profile.id, {
-    dept: String(dept || "").trim(),
-  });
+/** 管理员删除打分人员：删除全部代次档案与登录索引，账号无法再登录；历史打分保留 */
+export async function managerDeleteScorer(profile) {
+  if (!profile || !profile.key) throw new Error("账号信息缺失");
+  if (profile.role !== "scorer") throw new Error("只能删除打分人员");
+  const gens = await queryList("profiles", { cond: { key: profile.key }, limit: 1000 });
+  for (const g of gens) {
+    await api("DELETE", cls("profiles") + "/" + g.objectId);
+  }
+  const idx = await queryOne("loginIndex", { key: profile.key });
+  if (idx) {
+    await api("DELETE", cls("loginIndex") + "/" + idx.objectId);
+  }
 }
 
 /** 修改本人密码（首次强制改密时用初始密码作为原密码） */

@@ -9,7 +9,7 @@ import {
   managerCreateAccount,
   managerResetPassword,
   managerSetActive,
-  managerUpdateDept,
+  managerDeleteScorer,
   isManagerProfile,
 } from "./auth.js";
 import { exportRoundCsv } from "./csv.js";
@@ -34,7 +34,6 @@ if (isLeader) {
   document.querySelector(".page-sub").textContent =
     "实名查看并下载各期次打分结果。";
 } else {
-  if (isSuper) document.getElementById("tabBtnAdmins").hidden = false;
   if (isAdminView) {
     document.getElementById("btnDownloadCsv").hidden = true;
   }
@@ -50,11 +49,14 @@ function fmt(ts) {
   )}:${p(d.getMinutes())}`;
 }
 
-/** 稳定字符串哈希（匿名视图的行排序用） */
-function hashKey(s) {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-  return h;
+/** 随机打乱数组（结果行随机排列，避免按员工号/部门推断身份） */
+function shuffleRows(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function showAlert(name, type, msg) {
@@ -315,7 +317,7 @@ function bindRoundActions(tbody, rounds) {
           switchToResults(r.id);
         } else if (action === "csv") {
           const rows = await buildResultRows(r);
-          exportRoundCsv(r, rows);
+          exportRoundCsv(r, shuffleRows(rows));
         } else if (action === "clear") {
           if (
             confirm(
@@ -410,12 +412,12 @@ async function loadScorers() {
           p.active ? "启用" : "停用"
         }</span></td>
         <td><div class="table-actions" data-id="${escapeHtml(p.id)}">
-          <button class="ghost small" data-action="dept">修改部门</button>
           <button class="ghost small" data-action="toggle">${p.active ? "停用" : "启用"}</button>
           <button class="ghost small danger-text" data-action="resetPwd">重置密码</button>
           <button class="ghost small danger-text" data-action="resetScore" ${
             activeRound ? "" : "disabled"
           }>重置本期打分</button>
+          <button class="ghost small danger-text" data-action="delete">删除</button>
         </div></td>
       </tr>`
       )
@@ -454,15 +456,19 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
   const p = findProfile(map, box.dataset.id);
   if (!p) return;
   try {
-    if (btn.dataset.action === "dept") {
-      const v = prompt(`修改 ${p.employeeId} 的所属部门：`, p.dept || "");
-      if (v != null && v.trim() !== (p.dept || "")) {
-        await managerUpdateDept(p, v.trim());
-        loadScorers();
-      }
-    } else if (btn.dataset.action === "toggle") {
+    if (btn.dataset.action === "toggle") {
       if (!p.active || confirm(`确定停用打分人员 ${p.employeeId} 吗？停用后将立即无法登录。`)) {
         await managerSetActive(p, !p.active);
+        loadScorers();
+      }
+    } else if (btn.dataset.action === "delete") {
+      if (
+        confirm(
+          `确定删除打分人员 ${p.employeeId} 吗？\n删除后该账号无法再登录，历史打分记录保留。`
+        )
+      ) {
+        await managerDeleteScorer(p);
+        showAlert("Scorers", "ok", `已删除打分人员 ${p.employeeId}`);
         loadScorers();
       }
     } else if (btn.dataset.action === "resetPwd") {
@@ -676,7 +682,7 @@ async function renderResults(round) {
   meta.textContent =
     `期次「${round.name}」：应打分 ${rows.length} 人，已提交 ${submitted} 人，未提交 ${
       rows.length - submitted
-    } 人` + (isAdminView ? "（匿名视图：不显示打分人身份）" : "");
+    } 人` + (isAdminView ? "（匿名视图：已提交打分人不显示身份）" : "");
 
   const avg = depts.map((d) => {
     const vals = rows.map((r) => r.ratings[d.id]).filter((v) => typeof v === "number");
@@ -684,9 +690,7 @@ async function renderResults(round) {
     return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
   });
 
-  const viewRows = isAdminView
-    ? [...rows].sort((a, b) => hashKey(a.employeeId) - hashKey(b.employeeId))
-    : rows;
+  const viewRows = shuffleRows(rows);
 
   table.innerHTML = `
     <thead><tr>
@@ -701,13 +705,15 @@ async function renderResults(round) {
         <tr class="${r.submitted ? "" : "unsubmitted"}">
           ${
             isAdminView
-              ? `<td class="muted">匿名 ${i + 1} 号</td>`
+              ? r.submitted
+                ? `<td class="muted">匿名 ${i + 1} 号</td>`
+                : `<td>${escapeHtml(r.employeeId)}</td>`
               : `<td>${escapeHtml(r.employeeId)}</td><td>${escapeHtml(r.dept)}</td>`
           }
           ${depts
             .map((d) => `<td class="num">${r.ratings[d.id] == null ? "—" : r.ratings[d.id]}</td>`)
             .join("")}
-          <td>${r.submitted ? (isAdminView ? "已提交" : fmt(r.submittedAt)) : "未提交"}</td>
+          <td>${r.submitted ? (isAdminView ? "已提交" : fmt(r.submittedAt)) : `未提交${isAdminView ? "（" + escapeHtml(r.dept) + "）" : ""}`}</td>
         </tr>`
         )
         .join("")}
@@ -773,7 +779,7 @@ document.getElementById("btnDownloadCsv").addEventListener("click", async () => 
       resultState.rows = await buildResultRows(round);
       resultState.round = round;
     }
-    exportRoundCsv(round, resultState.rows);
+    exportRoundCsv(round, shuffleRows(resultState.rows));
   } catch (e) {
     alert("下载失败：" + zhError(e));
   }
