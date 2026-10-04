@@ -35,7 +35,7 @@ h1, h2, h3 { margin: 0 0 12px; line-height: 1.3; }
 
 /* ============ 顶部栏 ============ */
 .topbar {
-  background: #111827;
+  background: #12294a;
   color: #fff;
 }
 .topbar-inner {
@@ -49,6 +49,8 @@ h1, h2, h3 { margin: 0 0 12px; line-height: 1.3; }
 }
 .topbar .brand { font-weight: 700; font-size: 17px; }
 .topbar .spacer { flex: 1; }
+.topbar-left { display: inline-flex; align-items: center; gap: 12px; }
+.topbar-actions { display: inline-flex; align-items: center; gap: 8px; }
 .topbar .who { color: #d1d5db; font-size: 14px; }
 .topbar .who b { color: #fff; }
 .topbar a, .topbar button.linklike {
@@ -282,22 +284,28 @@ tr.unsubmitted td { color: var(--text-sub); }
 /* ============ 手机端优化 ============ */
 @media (max-width: 640px) {
   .container { padding: 0 12px; }
-  .card { padding: 14px; margin: 14px 0; }
-  .page-title { font-size: 19px; margin-top: 18px; }
+  .card { padding: 14px; margin: 10px 0; }
+  .page-title { font-size: 19px; margin-top: 14px; }
 
-  /* 顶栏：身份信息换行，文本缩小 */
+  /* 顶栏：第一行品牌+角色，第二行员工号(左)+操作(右对齐) */
   .topbar-inner { padding: 10px 12px; gap: 8px; }
   .topbar .brand { font-size: 16px; }
-  .topbar .who { width: 100%; font-size: 13px; }
+  .topbar .topbar-left { flex: 1 1 100%; }
+  .topbar .spacer { display: none; }
+  .topbar .who { width: auto; flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar .topbar-actions { margin-left: auto; }
 
   /* 表单联动行改为纵向堆叠，按钮全宽便于点按 */
   .inline-form { flex-direction: column; align-items: stretch; }
-  .inline-form label.field { min-width: 0; }
+  .inline-form label.field { min-width: 0; max-width: none !important; }
   .inline-form button { width: 100%; }
 
-  /* 表格：横向可滚动，字号与间距略降以保证信息展示 */
+  /* 表单控件加高，便于手机点按、避免输入/下拉框过短 */
+  input[type=text], input[type=password], input[type=number], select { min-height: 50px; font-size: 16px; }
+
+  /* 表格：横向可滚动，收紧行距减少底部留白 */
   table { font-size: 13px; }
-  th, td { padding: 7px 8px; }
+  th, td { padding: 8px 6px; }
 
   /* 页签横向可滚动 */
   .tabs button { padding: 9px 12px; }

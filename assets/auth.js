@@ -357,15 +357,19 @@ export function renderTopBar(profile, opts = {}) {
   const home = homePath(profile.role);
   box.innerHTML = `
     <div class="topbar-inner">
-      <span class="brand">中后台评价系统</span>
-      <span class="badge role-${profile.role}">${roleText}</span>
+      <span class="topbar-left">
+        <span class="brand">中后台评价系统</span>
+        <span class="badge role-${profile.role}">${roleText}</span>
+      </span>
       <span class="spacer"></span>
       <span class="who"><b>${escapeHtml(profile.employeeId)}</b>${
     profile.dept ? "（" + escapeHtml(profile.dept) + "）" : ""
   }</span>
-      ${opts.active !== home ? `<a href="${home}">首页</a>` : ""}
-      <a href="change-password.html">修改密码</a>
-      <button class="linklike" id="btnLogout" type="button">退出登录</button>
+      <span class="topbar-actions">
+        ${opts.active !== home ? `<a href="${home}">首页</a>` : ""}
+        <a href="change-password.html">修改密码</a>
+        <button class="linklike" id="btnLogout" type="button">退出登录</button>
+      </span>
     </div>`;
   document.getElementById("btnLogout").addEventListener("click", async () => {
     clearSession();
