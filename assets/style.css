@@ -250,6 +250,15 @@ tr.unsubmitted td { color: var(--text-sub); }
 .score-row:last-child { border-bottom: none; }
 .score-row .dept-name { flex: 1; font-weight: 600; }
 .score-row select { width: 150px; }
+/* 打分下拉框：已被选走的分数与仍可选的分数用对比背景色区分 */
+.score-row select option.opt-used {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.score-row select option.opt-free {
+  background: #dcfce7;
+  color: #166534;
+}
 .score-row.incomplete { background: #fef2f2; border-radius: 6px; padding-left: 8px; padding-right: 8px; }
 .score-row.incomplete .dept-name { color: #991b1b; }
 .readonly-score { font-weight: 700; color: var(--primary); }

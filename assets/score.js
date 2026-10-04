@@ -93,7 +93,11 @@ export function refreshOptions(selectList) {
   list.forEach((s) => {
     [...s.options].forEach((o) => {
       if (!o.value) return;
-      o.disabled = chosen.has(o.value) && s.value !== o.value;
+      const used = chosen.has(o.value) && s.value !== o.value;
+      o.disabled = used;
+      // 已被选走 / 仍可选，用不同背景色对比区分
+      o.classList.toggle("opt-used", used);
+      o.classList.toggle("opt-free", !used);
     });
     const row = s.closest('.score-row');
     if (row) {
@@ -176,6 +180,7 @@ async function init() {
     } else {
       scoreCardEl.hidden = false;
       renderForm(currentRound);
+      refreshOptions();
       updateTip();
     }
   } catch (e) {
