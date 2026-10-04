@@ -48,6 +48,11 @@ function shuffleRows(arr) {
   return a;
 }
 
+/** 是否所有打分人员均已提交（全部提交前不显示/下载分数） */
+function allSubmitted(rows) {
+  return rows.length > 0 && rows.every((r) => r.submitted);
+}
+
 function showAlert(name, type, msg) {
   const el = document.getElementById("alert" + name);
   el.className = "alert " + type;
@@ -300,6 +305,10 @@ function bindRoundActions(tbody, rounds) {
           }
         } else if (action === "csv") {
           const rows = await buildResultRows(r);
+          if (!allSubmitted(rows)) {
+            showAlert("Rounds", "error", `期次「${r.name}」尚有人员未提交，全部提交完成前不能下载结果`);
+            return;
+          }
           exportRoundCsv(r, shuffleRows(rows));
         } else if (action === "clear") {
           if (
@@ -334,6 +343,21 @@ function bindRoundActions(tbody, rounds) {
     `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, "0")}月`;
 })();
 
+/** 期次最多保留 5 期：自动删除最旧的期次及其打分数据，返回删除数量 */
+async function pruneRounds(maxKeep = 5) {
+  const rows = await queryList("rounds", { order: "-createdAt", limit: 200 });
+  // 保留最新的 maxKeep 期；进行中的期次永不删除
+  const toDelete = rows.filter((r, i) => i >= maxKeep && r.status !== "active");
+  for (const r of toDelete) {
+    const scores = await queryList("scores", { cond: { roundId: r.objectId }, limit: 1000 });
+    for (const s of scores) {
+      await api("DELETE", cls("scores") + "/" + s.objectId);
+    }
+    await api("DELETE", cls("rounds") + "/" + r.objectId);
+  }
+  return toDelete.length;
+}
+
 document.getElementById("formRoundAdd").addEventListener("submit", async (e) => {
   e.preventDefault();
   hideAlert("Rounds");
@@ -361,7 +385,13 @@ document.getElementById("formRoundAdd").addEventListener("submit", async (e) => 
       depts,
       createdBy: profile.employeeId,
     });
-    showAlert("Rounds", "ok", `期次「${name}」已创建并开启`);
+    const pruned = await pruneRounds(5);
+    showAlert(
+      "Rounds",
+      "ok",
+      `期次「${name}」已创建并开启` +
+        (pruned ? `；系统最多保留 5 期，已自动删除最早的 ${pruned} 个期次` : "")
+    );
     loadRounds();
   } catch (err) {
     showAlert("Rounds", "error", zhError(err));
@@ -662,16 +692,24 @@ async function renderResults(round) {
 
   const depts = round.depts || [];
   const submitted = rows.filter((r) => r.submitted).length;
+  const allDone = allSubmitted(rows);
   meta.textContent =
     `期次「${round.name}」：应打分 ${rows.length} 人，已提交 ${submitted} 人，未提交 ${
       rows.length - submitted
-    } 人` + (isAdminView ? "（匿名视图：已提交打分人不显示身份）" : "");
+    } 人` +
+    (allDone
+      ? isAdminView
+        ? "（匿名视图：已提交打分人不显示身份）"
+        : ""
+      : "（尚有人员未提交，全部提交完成前不显示任何分数）");
 
-  const avg = depts.map((d) => {
-    const vals = rows.map((r) => r.ratings[d.id]).filter((v) => typeof v === "number");
-    if (!vals.length) return "";
-    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
-  });
+  const avg = allDone
+    ? depts.map((d) => {
+        const vals = rows.map((r) => r.ratings[d.id]).filter((v) => typeof v === "number");
+        if (!vals.length) return "";
+        return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+      })
+    : depts.map(() => "");
 
   const viewRows = shuffleRows(rows);
 
@@ -694,7 +732,12 @@ async function renderResults(round) {
               : `<td>${escapeHtml(r.employeeId)}</td><td>${escapeHtml(r.dept)}</td>`
           }
           ${depts
-            .map((d) => `<td class="num">${r.ratings[d.id] == null ? "—" : r.ratings[d.id]}</td>`)
+            .map(
+              (d) =>
+                `<td class="num">${
+                  allDone && r.ratings[d.id] != null ? r.ratings[d.id] : "—"
+                }</td>`
+            )
             .join("")}
           <td>${r.submitted ? (isAdminView ? "已提交" : fmt(r.submittedAt)) : `未提交${isAdminView ? "（" + escapeHtml(r.dept) + "）" : ""}`}</td>
         </tr>`
@@ -746,6 +789,9 @@ document.getElementById("btnDownloadCsv").addEventListener("click", async () => 
       if (!round) return alert("请先选择期次");
       resultState.rows = await buildResultRows(round);
       resultState.round = round;
+    }
+    if (!allSubmitted(resultState.rows)) {
+      return alert("尚有人员未提交，全部提交完成前不能下载结果");
     }
     exportRoundCsv(round, shuffleRows(resultState.rows));
   } catch (e) {
