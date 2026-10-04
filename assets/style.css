@@ -168,6 +168,7 @@ button.small { padding: 4px 10px; font-size: 13px; }
 /* ============ 登录/初始化/改密居中页 ============ */
 .centered {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -310,10 +311,10 @@ tr.unsubmitted td { color: var(--text-sub); }
   /* 页签横向可滚动 */
   .tabs button { padding: 9px 12px; }
 
-  /* 打分行：纵向堆叠，加大行高与下拉框高度，避免内容过短、下方留白过多 */
-  .score-row { flex-direction: column; align-items: stretch; gap: 10px; padding: 18px 0; }
+  /* 打分行：纵向堆叠，加大行高与下拉框高度，让打分显示区域更高、点按更舒适 */
+  .score-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 22px 0; }
   .score-row .dept-name { font-size: 16px; }
-  .score-row select { width: 100%; min-height: 52px; font-size: 16px; }
+  .score-row select { width: 100%; min-height: 60px; font-size: 16px; }
 
   /* 登录/初始化卡片内边距适当收窄 */
   .auth-card { padding: 22px 18px; }

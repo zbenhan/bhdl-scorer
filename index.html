@@ -72,6 +72,8 @@
         const p = await getCurrentProfile();
         if (!p) throw new Error("登录异常，请重试");
         if (p.active === false) throw new Error("账号已停用，请联系管理员");
+        // 收起软键盘：带键盘跳转会导致新页面下端留白
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         if (p.mustChangePassword === true) location.replace("change-password.html");
         else location.replace(homePath(p.role));
       } catch (err) {
