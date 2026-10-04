@@ -545,13 +545,7 @@ async function loadDepts() {
       .map(
         (d, i) => `
       <tr>
-        <td class="num">
-          <button class="ghost small" data-action="up" ${i === 0 ? "disabled" : ""}>↑</button>
-          ${d.sortOrder ?? i + 1}
-          <button class="ghost small" data-action="down" ${
-            i === list.length - 1 ? "disabled" : ""
-          }>↓</button>
-        </td>
+        <td class="num">${i + 1}</td>
         <td>${escapeHtml(d.name)}</td>
         <td class="num"><span class="badge ${d.active ? "on" : "off"}">${
           d.active ? "启用" : "停用"
@@ -606,13 +600,6 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
       }
     } else if (btn.dataset.action === "toggle") {
       await api("PUT", cls("departments") + "/" + d.id, { active: !d.active });
-      loadDepts();
-    } else if (btn.dataset.action === "up" || btn.dataset.action === "down") {
-      const idx = list.findIndex((x) => x.id === d.id);
-      const swap = btn.dataset.action === "up" ? list[idx - 1] : list[idx + 1];
-      if (!swap) return;
-      await api("PUT", cls("departments") + "/" + d.id, { sortOrder: swap.sortOrder });
-      await api("PUT", cls("departments") + "/" + swap.id, { sortOrder: d.sortOrder });
       loadDepts();
     } else if (btn.dataset.action === "delete") {
       if (
