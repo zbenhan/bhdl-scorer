@@ -685,40 +685,55 @@ function populateResultSelector() {
 
 /** 组装某期的打分行：全部打分人员 + 各自打分（含未提交） */
 async function buildResultRows(round) {
-  const [scoreList, scorerProfiles] = await Promise.all([
-    queryList("scores", { cond: { roundId: round.id }, limit: 1000 }),
-    listProfilesByRoles(["scorer"]),
-  ]);
+  const scoreList = await queryList("scores", { cond: { roundId: round.id }, limit: 1000 });
 
   const scoreMap = new Map();
   scoreList.forEach((s) => {
     if (!scoreMap.has(s.key)) {
       scoreMap.set(s.key, {
+        employeeId: s.employeeId || "",
+        dept: s.dept || "",
         ratings: s.ratings || {},
         submittedAt: parseTime(s.submittedAt) || parseTime(s.createdAt),
       });
     }
   });
 
-  const curMap = new Map();
-  scorerProfiles.forEach((p) => pushCurrent(curMap, p));
-  // 结果仅统计“启用”状态的打分人员；停用人员不参与、不阻塞“全部提交”判断
-  const scorers = [...curMap.values()]
-    .filter((p) => p.active === true)
+  if (round.status === "active") {
+    // 进行中：结果仅统计“启用”状态的打分人员；停用人员不参与、不阻塞“全部提交”判断
+    const scorerProfiles = await listProfilesByRoles(["scorer"]);
+    const curMap = new Map();
+    scorerProfiles.forEach((p) => pushCurrent(curMap, p));
+    const scorers = [...curMap.values()]
+      .filter((p) => p.active === true)
+      .sort((a, b) =>
+        String(a.employeeId).localeCompare(String(b.employeeId), "zh-Hans-CN")
+      );
+
+    return scorers.map((p) => {
+      const s = scoreMap.get(p.key);
+      return {
+        employeeId: p.employeeId,
+        dept: p.dept || "",
+        submitted: !!s,
+        ratings: s ? s.ratings : {},
+        submittedAt: s ? s.submittedAt : null,
+      };
+    });
+  }
+
+  // 历史（已关闭）期次：按打分记录查询，实际提交记录为准，不受当前启用状态过滤
+  return [...scoreMap.values()]
+    .map((s) => ({
+      employeeId: s.employeeId,
+      dept: s.dept,
+      submitted: true,
+      ratings: s.ratings,
+      submittedAt: s.submittedAt,
+    }))
     .sort((a, b) =>
       String(a.employeeId).localeCompare(String(b.employeeId), "zh-Hans-CN")
     );
-
-  return scorers.map((p) => {
-    const s = scoreMap.get(p.key);
-    return {
-      employeeId: p.employeeId,
-      dept: p.dept || "",
-      submitted: !!s,
-      ratings: s ? s.ratings : {},
-      submittedAt: s ? s.submittedAt : null,
-    };
-  });
 }
 
 async function renderResults(round) {
@@ -728,18 +743,21 @@ async function renderResults(round) {
   const rows = await buildResultRows(round);
   resultState = { round, rows };
 
+  const isActive = round.status === "active";
   const depts = round.depts || [];
   const submitted = rows.filter((r) => r.submitted).length;
-  const allDone = allSubmitted(rows);
-  meta.textContent =
-    `期次「${round.name}」：应打分 ${rows.length} 人，已提交 ${submitted} 人，未提交 ${
-      rows.length - submitted
-    } 人` +
-    (allDone
-      ? isAdminView
-        ? "（匿名视图：已提交打分人不显示身份）"
-        : ""
-      : "（尚有人员未提交，全部提交完成前不显示任何分数）");
+  const allDone = isActive ? allSubmitted(rows) : true;
+  meta.textContent = isActive
+    ? `期次「${round.name}」：应打分 ${rows.length} 人，已提交 ${submitted} 人，未提交 ${
+        rows.length - submitted
+      } 人` +
+      (allDone
+        ? isAdminView
+          ? "（匿名视图：已提交打分人不显示身份）"
+          : ""
+        : "（尚有人员未提交，全部提交完成前不显示任何分数）")
+    : `期次「${round.name}」：共 ${rows.length} 条打分记录` +
+      (isAdminView ? "（匿名视图：已提交打分人不显示身份）" : "");
 
   const avg = allDone
     ? depts.map((d) => {
@@ -828,7 +846,7 @@ document.getElementById("btnDownloadCsv").addEventListener("click", async () => 
       resultState.rows = await buildResultRows(round);
       resultState.round = round;
     }
-    if (!allSubmitted(resultState.rows)) {
+    if (round.status === "active" && !allSubmitted(resultState.rows)) {
       return await alertBox("尚有人员未提交，全部提交完成前不能下载结果");
     }
     exportRoundCsv(round, shuffleRows(resultState.rows), { anonymous: isAdminView });

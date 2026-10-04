@@ -10,6 +10,8 @@ import {
   saveSession,
   loadSession,
   clearSession,
+  isSessionIdleExpired,
+  watchSessionIdle,
   parseTime,
 } from "./lc.js";
 
@@ -110,6 +112,15 @@ export function homePath(role) {
 
 /** 页面守卫 */
 export async function requireProfile({ requireChanged = true } = {}) {
+  // 先检查空闲超时（避免 watchSessionIdle 内首次 touch 覆盖真实活动时间）
+  if (isSessionIdleExpired()) {
+    clearSession();
+    location.replace(
+      "index.html?msg=" + encodeURIComponent("长时间未操作，请重新登录")
+    );
+    return null;
+  }
+  watchSessionIdle();
   const p = await getCurrentProfile();
   if (!p) {
     location.replace("index.html");

@@ -58,8 +58,18 @@ async function loadActiveRound() {
   };
 }
 
+/** Fisher-Yates 随机打乱（避免按固定顺序打分导致相互参照） */
+function shuffle(a) {
+  const arr = a.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function renderForm(round) {
-  const depts = round.depts || [];
+  const depts = shuffle(round.depts || []);
   rowsEl.innerHTML = "";
   selects = [];
 

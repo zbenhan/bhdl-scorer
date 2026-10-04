@@ -6,9 +6,14 @@ export const configured = !!cfg.baseURL;
 
 const BASE = (cfg.baseURL || "").replace(/\/+$/, "");
 const SESSION_KEY = "bmob_session";
+const ACTIVE_KEY = "bmob_active_ts";
+
+/** 空闲超时时长：30 分钟无操作视为断连 */
+export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 export function saveSession(s) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  touchSession();
 }
 export function loadSession() {
   try {
@@ -19,6 +24,66 @@ export function loadSession() {
 }
 export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(ACTIVE_KEY);
+}
+
+/** 记录最近一次活动时间 */
+export function touchSession() {
+  try {
+    localStorage.setItem(ACTIVE_KEY, String(Date.now()));
+  } catch {}
+}
+
+function activeAt() {
+  try {
+    const n = parseInt(localStorage.getItem(ACTIVE_KEY) || "0", 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 是否已因空闲超时而需要断连（未登录或首次加载不算超时） */
+export function isSessionIdleExpired() {
+  const s = loadSession();
+  if (!s || !s.sessionToken) return false;
+  const last = activeAt();
+  if (!last) {
+    touchSession();
+    return false;
+  }
+  return Date.now() - last > IDLE_TIMEOUT_MS;
+}
+
+let idleWatching = false;
+/**
+ * 安装空闲守卫：监听用户活动刷新活动时间；周期性检测超时后清除会话并跳回登录页。
+ * 多次调用只生效一次。
+ */
+export function watchSessionIdle() {
+  if (idleWatching) return;
+  idleWatching = true;
+  let lastTouch = 0;
+  const events = ["click", "keydown", "mousemove", "scroll", "touchstart", "wheel", "focus"];
+  const onActive = () => {
+    const now = Date.now();
+    if (now - lastTouch < 30000) return; // 节流，避免频繁写入
+    lastTouch = now;
+    touchSession();
+  };
+  events.forEach((ev) => window.addEventListener(ev, onActive, { passive: true }));
+  touchSession();
+  setInterval(() => {
+    if (isSessionIdleExpired()) {
+      clearSession();
+      const page = (location.pathname || "").split("/").pop() || "index.html";
+      if (page !== "index.html") {
+        location.replace(
+          "index.html?msg=" + encodeURIComponent("长时间未操作，已自动退出，请重新登录")
+        );
+      }
+    }
+  }, 30000);
 }
 
 /**
