@@ -13,3 +13,10 @@ node_modules/
 
 # TRAE 工作文档（本地计划等）
 .trae/
+
+# 敏感数据：后端数据文件（含账号、打分数据），严禁提交
+data.json
+server/data.json
+
+# 测试脚本：含明文密码与接口用法，不对外公开
+server/test.js
