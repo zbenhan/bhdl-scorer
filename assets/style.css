@@ -302,9 +302,10 @@ tr.unsubmitted td { color: var(--text-sub); }
   /* 页签横向可滚动 */
   .tabs button { padding: 9px 12px; }
 
-  /* 打分行：纵向堆叠，下拉框全宽便于触控 */
-  .score-row { flex-direction: column; align-items: stretch; gap: 8px; }
-  .score-row select { width: 100%; }
+  /* 打分行：纵向堆叠，加大行高与下拉框高度，避免内容过短、下方留白过多 */
+  .score-row { flex-direction: column; align-items: stretch; gap: 10px; padding: 18px 0; }
+  .score-row .dept-name { font-size: 16px; }
+  .score-row select { width: 100%; min-height: 52px; font-size: 16px; }
 
   /* 登录/初始化卡片内边距适当收窄 */
   .auth-card { padding: 22px 18px; }
