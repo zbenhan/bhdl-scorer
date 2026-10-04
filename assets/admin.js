@@ -765,7 +765,23 @@ const loaders = {
   results: loadResults,
 };
 
-// 首屏：期次管理
+// 首屏：超管只管「管理员账号」；管理员进期次管理
 (async function init() {
+  if (isSuper) {
+    // 超级管理员：仅显示「管理员账号」页签，隐藏其余业务页签
+    document.querySelectorAll("#tabs button").forEach((b) => {
+      const show = b.dataset.tab === "admins";
+      b.hidden = !show;
+      b.style.display = show ? "" : "none";
+      b.classList.toggle("active", show);
+    });
+    document.querySelectorAll(".tabpanel").forEach((p) => p.classList.remove("active"));
+    document.getElementById("panel-admins").classList.add("active");
+    document.querySelector(".page-title").textContent = "管理员账号管理";
+    document.querySelector(".page-sub").textContent =
+      "创建与管理「管理员」账号；打分期次、人员、部门与结果由管理员负责。";
+    await loadAdmins();
+    return;
+  }
   await loadRounds();
 })();
