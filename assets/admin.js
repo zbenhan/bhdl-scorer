@@ -109,6 +109,58 @@ let roundsCache = [];
 let activeRound = null;
 let resultState = { round: null, rows: [] };
 
+// ---------------- 自定义弹窗（替换浏览器原生 confirm/alert/prompt，按钮统一为“是/否”“确定/取消”） ----------------
+function ensureModal() {
+  if (document.getElementById("modalRoot")) return;
+  const root = document.createElement("div");
+  root.id = "modalRoot";
+  root.innerHTML = `
+    <div class="modal-overlay" hidden>
+      <div class="modal">
+        <div class="modal-msg" id="modalMsg"></div>
+        <input type="text" class="modal-input" id="modalInput" hidden />
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="modalCancel">否</button>
+          <button type="button" id="modalOk">是</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(root);
+}
+
+function openModal({ message, hasInput = false, inputValue = "", okLabel = "是", cancelLabel = "否", showCancel = true }) {
+  ensureModal();
+  const overlay = document.querySelector(".modal-overlay");
+  const msg = document.getElementById("modalMsg");
+  const input = document.getElementById("modalInput");
+  const ok = document.getElementById("modalOk");
+  const cancel = document.getElementById("modalCancel");
+  msg.textContent = message;
+  ok.textContent = okLabel;
+  cancel.textContent = cancelLabel;
+  input.hidden = !hasInput;
+  input.value = inputValue;
+  cancel.hidden = !showCancel;
+  overlay.hidden = false;
+  return new Promise((resolve) => {
+    const done = (val) => {
+      overlay.hidden = true;
+      ok.onclick = cancel.onclick = overlay.onclick = null;
+      resolve(val);
+    };
+    ok.onclick = () => done(hasInput ? input.value : true);
+    cancel.onclick = () => done(null);
+    overlay.onclick = (e) => { if (e.target === overlay) done(null); };
+    if (hasInput) input.focus();
+  });
+}
+
+function confirmBox(message) { return openModal({ message }); }
+function alertBox(message) { return openModal({ message, okLabel: "确定", showCancel: false }); }
+function promptBox(message, value) {
+  return openModal({ message, hasInput: true, inputValue: value == null ? "" : value, okLabel: "确定", cancelLabel: "取消" });
+}
+
 // ===================================================================
 // 管理员账号（仅超管）
 // ===================================================================
@@ -184,13 +236,13 @@ document.getElementById("tbodyAdmins").addEventListener("click", async (e) => {
   if (!prof) return;
   try {
     if (btn.dataset.action === "toggle") {
-      if (!prof.active || confirm(`确定停用 ${prof.employeeId} 吗？停用后将立即无法登录。`)) {
+      if (!prof.active || await confirmBox(`确定停用 ${prof.employeeId} 吗？停用后将立即无法登录。`)) {
         await managerSetActive(prof, !prof.active);
         loadAdmins();
       }
     } else if (btn.dataset.action === "resetPwd") {
       if (
-        confirm(
+        await confirmBox(
           `确定将 ${prof.employeeId} 的密码重置为 000000 吗？\n对方下次登录时需要重新设置新密码。`
         )
       ) {
@@ -289,7 +341,7 @@ function bindRoundActions(tbody, rounds) {
       const action = btn.dataset.action;
       try {
         if (action === "close") {
-          if (confirm(`确定关闭期次「${r.name}」吗？关闭后打分人员将无法提交。`)) {
+          if (await confirmBox(`确定关闭期次「${r.name}」吗？关闭后打分人员将无法提交。`)) {
             await api("PUT", cls("rounds") + "/" + r.id, { status: "closed" });
             loadRounds();
           }
@@ -299,7 +351,7 @@ function bindRoundActions(tbody, rounds) {
             showAlert("Rounds", "error", "已有进行中的期次，请先关闭后再开启本期");
             return;
           }
-          if (confirm(`确定重新开启期次「${r.name}」吗？`)) {
+          if (await confirmBox(`确定重新开启期次「${r.name}」吗？`)) {
             await api("PUT", cls("rounds") + "/" + r.id, { status: "active" });
             loadRounds();
           }
@@ -312,7 +364,7 @@ function bindRoundActions(tbody, rounds) {
           exportRoundCsv(r, shuffleRows(rows));
         } else if (action === "clear") {
           if (
-            confirm(
+            await confirmBox(
               `确定清空期次「${r.name}」的全部 ${r.scoreCount} 份打分吗？\n清空后所有打分人员可重新打分。建议先下载结果存档！`
             )
           ) {
@@ -324,7 +376,7 @@ function bindRoundActions(tbody, rounds) {
             loadRounds();
           }
         } else if (action === "delete") {
-          if (confirm(`确定删除期次「${r.name}」吗？此操作不可恢复。`)) {
+          if (await confirmBox(`确定删除期次「${r.name}」吗？此操作不可恢复。`)) {
             await api("DELETE", cls("rounds") + "/" + r.id);
             loadRounds();
           }
@@ -470,13 +522,13 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
   if (!p) return;
   try {
     if (btn.dataset.action === "toggle") {
-      if (!p.active || confirm(`确定停用打分人员 ${p.employeeId} 吗？停用后将立即无法登录。`)) {
+      if (!p.active || await confirmBox(`确定停用打分人员 ${p.employeeId} 吗？停用后将立即无法登录。`)) {
         await managerSetActive(p, !p.active);
         loadScorers();
       }
     } else if (btn.dataset.action === "delete") {
       if (
-        confirm(
+        await confirmBox(
           `确定删除打分人员 ${p.employeeId} 吗？\n删除后该账号无法再登录，历史打分记录保留。`
         )
       ) {
@@ -486,7 +538,7 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
       }
     } else if (btn.dataset.action === "resetPwd") {
       if (
-        confirm(
+        await confirmBox(
           `确定将 ${p.employeeId} 的密码重置为 000000 吗？\n对方下次登录时需要重新设置新密码。`
         )
       ) {
@@ -507,7 +559,7 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
         showAlert("Scorers", "info", `${p.employeeId} 在本期还未打分，无需重置`);
         return;
       }
-      if (confirm(`确定重置 ${p.employeeId} 在「${activeRound.name}」的打分吗？对方可重新打分。`)) {
+      if (await confirmBox(`确定重置 ${p.employeeId} 在「${activeRound.name}」的打分吗？对方可重新打分。`)) {
         await api("DELETE", cls("scores") + "/" + existing.objectId);
         showAlert("Scorers", "ok", `已重置 ${p.employeeId} 的本期打分`);
         loadRounds();
@@ -593,7 +645,7 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
   if (!d) return;
   try {
     if (btn.dataset.action === "rename") {
-      const v = prompt("修改部门名称：", d.name);
+      const v = await promptBox("修改部门名称：", d.name);
       if (v != null && v.trim() && v.trim() !== d.name) {
         await api("PUT", cls("departments") + "/" + d.id, { name: v.trim() });
         loadDepts();
@@ -603,7 +655,7 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
       loadDepts();
     } else if (btn.dataset.action === "delete") {
       if (
-        confirm(
+        await confirmBox(
           `确定删除部门「${d.name}」吗？\n历史期次已保存该部门的打分快照，不受影响；未关闭的期次不再包含它。`
         )
       ) {
@@ -773,16 +825,16 @@ document.getElementById("btnDownloadCsv").addEventListener("click", async () => 
     if (!round || round.id !== sel.value) {
       if (!roundsCache.length) await loadRoundsDataOnly();
       round = roundsCache.find((r) => r.id === sel.value);
-      if (!round) return alert("请先选择期次");
+      if (!round) return await alertBox("请先选择期次");
       resultState.rows = await buildResultRows(round);
       resultState.round = round;
     }
     if (!allSubmitted(resultState.rows)) {
-      return alert("尚有人员未提交，全部提交完成前不能下载结果");
+      return await alertBox("尚有人员未提交，全部提交完成前不能下载结果");
     }
     exportRoundCsv(round, shuffleRows(resultState.rows));
   } catch (e) {
-    alert("下载失败：" + zhError(e));
+    await alertBox("下载失败：" + zhError(e));
   }
 });
 
