@@ -62,6 +62,8 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       alertBox.hidden = true;
+      // 立即收起软键盘：让收起动画在登录请求期间完成，避免跳转后新页面下端留白
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       btn.disabled = true;
       btn.textContent = "登录中…";
       try {
@@ -72,8 +74,9 @@
         const p = await getCurrentProfile();
         if (!p) throw new Error("登录异常，请重试");
         if (p.active === false) throw new Error("账号已停用，请联系管理员");
-        // 收起软键盘：带键盘跳转会导致新页面下端留白
+        // 再等一小段，确保软键盘已完全收起再跳转
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        await new Promise((r) => setTimeout(r, 150));
         if (p.mustChangePassword === true) location.replace("change-password.html");
         else location.replace(homePath(p.role));
       } catch (err) {

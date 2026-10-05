@@ -8,6 +8,10 @@ const BASE = (cfg.baseURL || "").replace(/\/+$/, "");
 const SESSION_KEY = "bmob_session";
 const ACTIVE_KEY = "bmob_active_ts";
 
+// 移动端登录跳转时软键盘可能遗留缩小的视口，导致新页面下端留白：
+// 页面显示（含从 bfcache 恢复）时重置到顶部，强制浏览器重新计算布局。
+window.addEventListener("pageshow", () => window.scrollTo(0, 0));
+
 /** 空闲超时时长：30 分钟无操作视为断连 */
 export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
