@@ -62,7 +62,11 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       alertBox.hidden = true;
-      // 立即收起软键盘：让收起动画在登录请求期间完成，避免跳转后新页面下端留白
+      // 点击登录按钮后焦点已移到按钮上，需显式 blur 输入框才能真正收起软键盘
+      const idInput = document.getElementById("employeeId");
+      const pwdInput = document.getElementById("password");
+      if (idInput && idInput.blur) idInput.blur();
+      if (pwdInput && pwdInput.blur) pwdInput.blur();
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       btn.disabled = true;
       btn.textContent = "登录中…";
@@ -74,9 +78,10 @@
         const p = await getCurrentProfile();
         if (!p) throw new Error("登录异常，请重试");
         if (p.active === false) throw new Error("账号已停用，请联系管理员");
-        // 再等一小段，确保软键盘已完全收起再跳转
-        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-        await new Promise((r) => setTimeout(r, 150));
+        // 再次确保输入框失焦，并等待软键盘收起动画完成
+        if (idInput && idInput.blur) idInput.blur();
+        if (pwdInput && pwdInput.blur) pwdInput.blur();
+        await new Promise((r) => setTimeout(r, 300));
         if (p.mustChangePassword === true) location.replace("change-password.html");
         else location.replace(homePath(p.role));
       } catch (err) {
