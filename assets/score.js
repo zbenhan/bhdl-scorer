@@ -174,10 +174,7 @@ async function init() {
     roundInfoEl.hidden = false;
     roundInfoEl.innerHTML = `
       <span class="chip">期次：${escapeHtml(currentRound.name)}</span>
-      <span class="chip">打分部门数：${currentRound.depts.length}</span>
-      <span class="chip">打分人：${escapeHtml(profile.employeeId)}（${escapeHtml(
-      profile.dept || ""
-    )}）</span>`;
+      <span class="chip">打分部门数：${currentRound.depts.length}</span>`;
 
     const scoreObj = await findMyScore(currentRound.id, profile.key);
 
