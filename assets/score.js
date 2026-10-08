@@ -85,7 +85,10 @@ function renderForm(round) {
     sel.dataset.deptId = d.id;
     sel.innerHTML =
       '<option value="">请选择分值</option>' +
-      SCORE_VALUES.map((v) => `<option value="${v}">${v} 分</option>`).join("");
+      [...SCORE_VALUES]
+        .reverse()
+        .map((v) => `<option value="${v}">${v} 分</option>`)
+        .join("");
     sel.addEventListener("change", () => {
       refreshOptions();
       updateTip();
