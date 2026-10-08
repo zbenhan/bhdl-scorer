@@ -250,6 +250,21 @@ export async function managerDeleteScorer(profile) {
   }
 }
 
+/** 超级管理员删除管理员：删除全部代次档案与登录索引，账号无法再登录 */
+export async function managerDeleteAdmin(profile) {
+  if (!profile || !profile.key) throw new Error("账号信息缺失");
+  if (profile.role !== "admin") throw new Error("只能删除管理员");
+  if (profile.protected === true) throw new Error("固定账号不可删除");
+  const gens = await queryList("profiles", { cond: { key: profile.key }, limit: 1000 });
+  for (const g of gens) {
+    await api("DELETE", cls("profiles") + "/" + g.objectId);
+  }
+  const idx = await queryOne("loginIndex", { key: profile.key });
+  if (idx) {
+    await api("DELETE", cls("loginIndex") + "/" + idx.objectId);
+  }
+}
+
 /** 修改本人密码（首次强制改密时用初始密码作为原密码） */
 export async function changeMyPassword(profile, { oldPassword, newPassword }) {
   const s = loadSession();

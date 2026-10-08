@@ -10,6 +10,7 @@ import {
   managerResetPassword,
   managerSetActive,
   managerDeleteScorer,
+  managerDeleteAdmin,
   isManagerProfile,
 } from "./auth.js";
 import { exportRoundCsv } from "./csv.js";
@@ -195,7 +196,8 @@ async function loadAdmins() {
                 : `<button class="ghost small" data-action="toggle">${
                     p.active ? "停用" : "启用"
                   }</button>
-                   <button class="ghost small danger-text" data-action="resetPwd">重置密码</button>`
+                   <button class="ghost small danger-text" data-action="resetPwd">重置密码</button>
+                   <button class="ghost small danger-text" data-action="delete">删除</button>`
             }
           </div>
         </td>
@@ -244,6 +246,16 @@ document.getElementById("tbodyAdmins").addEventListener("click", async (e) => {
       ) {
         await managerResetPassword(prof);
         showAlert("Admins", "ok", `已将 ${prof.employeeId} 的密码重置为 000000`);
+        loadAdmins();
+      }
+    } else if (btn.dataset.action === "delete") {
+      if (
+        await confirmBox(
+          `确定删除管理员 ${prof.employeeId} 吗？\n删除后该账号无法再登录，此操作不可恢复。`
+        )
+      ) {
+        await managerDeleteAdmin(prof);
+        showAlert("Admins", "ok", `已删除管理员 ${prof.employeeId}`);
         loadAdmins();
       }
     }
