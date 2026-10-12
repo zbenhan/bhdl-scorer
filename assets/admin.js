@@ -637,6 +637,7 @@ document.getElementById("formDeptAdd").addEventListener("submit", async (e) => {
       active: true,
       sortOrder: nextSort,
     });
+    await syncActiveRoundDepts();
     input.value = "";
     loadDepts();
   } catch (err) {
@@ -656,10 +657,12 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
       const v = await promptBox("修改部门名称：", d.name);
       if (v != null && v.trim() && v.trim() !== d.name) {
         await api("PUT", cls("departments") + "/" + d.id, { name: v.trim() });
+        await syncActiveRoundDepts();
         loadDepts();
       }
     } else if (btn.dataset.action === "toggle") {
       await api("PUT", cls("departments") + "/" + d.id, { active: !d.active });
+      await syncActiveRoundDepts();
       loadDepts();
     } else if (btn.dataset.action === "delete") {
       if (
@@ -668,6 +671,7 @@ document.getElementById("tbodyDepts").addEventListener("click", async (e) => {
         )
       ) {
         await api("DELETE", cls("departments") + "/" + d.id);
+        await syncActiveRoundDepts();
         loadDepts();
       }
     }
