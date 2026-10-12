@@ -581,6 +581,23 @@ document.getElementById("tbodyScorers").addEventListener("click", async (e) => {
 // ===================================================================
 // 被打分部门
 // ===================================================================
+/** 部门表变化后，同步进行中期次的部门快照（打分页读取的是期次快照，否则看不到最新部门） */
+async function syncActiveRoundDepts() {
+  const actives = await queryList("rounds", {
+    cond: { status: "active" },
+    order: "-createdAt",
+    limit: 1,
+  });
+  if (!actives.length) return;
+  const deptRows = await queryList("departments", {
+    cond: { active: true },
+    order: "sortOrder",
+    limit: 200,
+  });
+  const depts = deptRows.map((d) => ({ id: d.objectId, name: d.name }));
+  await api("PUT", cls("rounds") + "/" + actives[0].objectId, { depts });
+}
+
 function deptToPlain(d) {
   return {
     id: d.objectId,
