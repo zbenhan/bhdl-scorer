@@ -126,6 +126,20 @@ function applyOrder(list, order) {
   });
 }
 
+/** 部门表变更后，同步所有进行中期次的部门快照（打分页读取的是期次快照） */
+function syncActiveRoundDepts() {
+  const depts = table("departments")
+    .filter((d) => d.active !== false)
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    .map((d) => ({ id: d.objectId, name: d.name }));
+  table("rounds")
+    .filter((r) => r.status === "active")
+    .forEach((r) => {
+      r.depts = depts;
+      r.updatedAt = now();
+    });
+}
+
 // ---------------- 路由 ----------------
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
@@ -268,6 +282,7 @@ const server = http.createServer(async (req, res) => {
         }
         const row = { ...body, objectId: newId() + newId(), createdAt: now(), updatedAt: now() };
         rows.push(row);
+        if (tname === "departments") syncActiveRoundDepts();
         save();
         return send(res, 201, { objectId: row.objectId, createdAt: row.createdAt }, origin);
       }
@@ -297,6 +312,7 @@ const server = http.createServer(async (req, res) => {
         Object.assign(row, body);
         row.objectId = oid;
         row.updatedAt = now();
+        if (tname === "departments") syncActiveRoundDepts();
         save();
         return send(res, 200, { updatedAt: row.updatedAt }, origin);
       }
@@ -304,6 +320,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "DELETE" && oid) {
         if (!isManager(prof)) return send(res, 403, { code: 403, error: "forbidden" }, origin);
         db.classes[tname] = rows.filter((r) => r.objectId !== oid);
+        if (tname === "departments") syncActiveRoundDepts();
         save();
         return send(res, 200, { msg: "ok" }, origin);
       }
