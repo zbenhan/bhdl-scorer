@@ -102,16 +102,7 @@ function renderForm(round) {
 
 export function refreshOptions(selectList) {
   const list = selectList || selects;
-  const chosen = new Set(list.map((s) => s.value).filter(Boolean));
   list.forEach((s) => {
-    [...s.options].forEach((o) => {
-      if (!o.value) return;
-      const used = chosen.has(o.value) && s.value !== o.value;
-      o.disabled = used;
-      // 已被选走 / 仍可选，用不同背景色对比区分
-      o.classList.toggle("opt-used", used);
-      o.classList.toggle("opt-free", !used);
-    });
     const row = s.closest('.score-row');
     if (row) {
       if (!s.value) row.classList.add('incomplete');
@@ -131,13 +122,10 @@ export function validateSelections(selectList) {
   const missing = list.filter((s) => !s.value).length;
   if (missing > 0)
     return `还有 ${missing} 个部门未打分，必须为所有部门打分后才能提交`;
-  const values = [];
   for (const s of list) {
     const v = parseInt(s.value, 10);
     if (!SCORE_VALUES.includes(v)) return "存在非法分值";
-    values.push(v);
   }
-  if (new Set(values).size !== values.length) return "各部门分值不能相同，请检查";
   return null;
 }
 
